@@ -1,0 +1,1 @@
+Submit the employee's leave request, exactly as they stated it, to the policy check. Call it at most once, and only after the employee has given every detail. The tool returns the policy check's result; it never approves anything.

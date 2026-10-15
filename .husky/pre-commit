@@ -1,0 +1,11 @@
+npx lint-staged
+
+# Fail closed: a commit without the secret scan is not allowed.
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: gitleaks is not installed, so the secret scan can't run." >&2
+  echo "Install it (see CONTRIBUTING.md, 'Secret scanning') and commit again." >&2
+  exit 1
+fi
+
+# Runs after lint-staged so it scans the final staged content.
+gitleaks git --pre-commit --staged --redact --verbose

@@ -1,0 +1,2 @@
+# Pin policy files to LF so policyHash (SHA-256 of raw bytes) is the same on every checkout.
+policies/** text eol=lf

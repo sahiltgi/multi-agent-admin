@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "target": "es2024",
+    "lib": ["es2024"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"],
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tools.tsbuildinfo"
+  },
+  "include": [
+    "vitest.config.ts",
+    "eslint.config.js",
+    "scripts/**/*.mjs",
+    ".claude/hooks/**/*.mjs",
+    ".claude/hooks/**/*.ts"
+  ]
+}

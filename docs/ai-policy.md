@@ -1,0 +1,69 @@
+# AI policy
+
+How AI coding tools are allowed to work in this repo. [AGENTS.md](../AGENTS.md) holds the coding rules; this file covers the guardrails around the tools themselves.
+
+## Policy
+
+- **Tools allowed:** Claude Code only, running under the committed `.claude/settings.json` and hooks. Any other AI tool needs this file updated first.
+- **Data allowed:** synthetic data only. Never put real employee data, real names, emails or IDs, secrets or `.env` contents in prompts, code, fixtures or logs.
+- **MCP:**
+  - No MCP servers by default (`enableAllProjectMcpServers: false`).
+  - Each server needs the owner's approval and an entry in [mcp-inventory.md](mcp-inventory.md).
+  - `.mcp.json` is under CODEOWNERS.
+- **Dangerous modes off:** `bypassPermissions` is disabled. Never run with `--dangerously-skip-permissions`, never disable the sandbox, and never skip git hooks.
+- **Human review:** every PR needs a human review before merge, whether AI wrote it or not. That means CODEOWNERS, branch protection, and the PR template's "AI assistance" section.
+- **Owner:** @sahilfiftyfivetech. **Backup:** TBD (assign before 2026-10-15).
+- **Next review:** 2026-11-01.
+
+## Claude Code permissions (`.claude/settings.json`)
+
+The shared, committed `.claude/settings.json` gives every contributor the same permission policy. Claude Code checks rules in the order **deny → ask → allow**. A deny always wins, and an ask beats a matching allow.
+
+| Rule group                                                                                 | Effect                                    | Why                                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------------------ | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **allow** `npm run typecheck`, `lint`, `test` (`npm test`), `test:one *`, `build`, `evals` | Run without a prompt                      | The done-check and per-edit test loop from AGENTS.md. These commands only read source or write to `dist/`. Exact matches, so variants like `npm run lint -- --fix` that rewrite files still prompt. |
+| **allow** `git status`, `git diff`, `git log`, `git branch`                                | Run without a prompt                      | Read-only inspection of repo state.                                                                                                                                                                 |
+| **allow** `Read(./**)`                                                                     | Read any file in the repo                 | Agents need the codebase as context. The deny rules below still win.                                                                                                                                |
+| **ask** `git branch -d/-D/-m/-M/-f` (and long forms)                                       | Prompt                                    | Deleting, renaming or force-moving a branch isn't read-only, even though `git branch` is allowed.                                                                                                   |
+| **ask** `git commit`, `git push`                                                           | Prompt                                    | A human decides what enters history and what leaves the machine (the review step in HARD RULE 7).                                                                                                   |
+| **ask** `npm install/i/add`, `npm uninstall/remove/rm/un/r`                                | Prompt                                    | Dependency changes are supply-chain decisions. `add` is an alias of `install`, so every alias is listed.                                                                                            |
+| **ask** `docker *`, `docker-compose *`, edits to `docker-compose.yml`                      | Prompt                                    | Docker controls the local MongoDB and its data volume, and runs with broad host access.                                                                                                             |
+| **deny** `Read`/`Edit` of `.env`, `.env.*` except `.env.example`                           | Blocked                                   | Secrets live only in `.env` (AGENTS.md). Agents may read the template, never real values. The patterns match at any depth, so `server/.env` is covered too.                                         |
+| **deny** `Read`/`Edit` of `secrets/**`                                                     | Blocked                                   | Reserved for credentials and keys at any depth.                                                                                                                                                     |
+| `permissions.disableBypassPermissionsMode: "disable"`                                      | `bypassPermissions` mode can't be entered | Bypass mode skips every prompt. The guardrails above mean nothing if one keystroke can switch them off.                                                                                             |
+| `enableAllProjectMcpServers: false`                                                        | Each `.mcp.json` server needs approval    | MCP servers run code and widen what agents can reach. Each one is approved explicitly (see [mcp-inventory.md](mcp-inventory.md)).                                                                   |
+
+Notes:
+
+- **`.env.example` exception.** An allow rule can't carve an exception out of a deny rule. The exception is the gitignore negation `!.env.example`, listed after `.env.*` in the same deny list. On a Claude Code version without negation support, `.env.example` is denied as well, which fails closed.
+- **Bypass key value.** The docs disagree: the permissions page says `"disable"`, while the settings reference shows boolean `true`. The Claude Code CLI only accepts the string `"disable"`. The boolean form belongs to the Claude Desktop app's managed setting.
+- **Trust and overrides.** Allow rules from this file take effect once each contributor trusts the folder. Deny and ask rules apply immediately. Personal additions go in the gitignored `.claude/settings.local.json`. A local allow can't override a deny or ask from this file.
+- **Limits.** Bash rules match the command text, so they are guardrails, not a security boundary. `git -C . push` isn't caught by `git push *`. Read/Edit denies cover Claude's file tools and commands such as `cat` or redirects, but not a script that opens `.env` itself (`node -e ...`). OS-level enforcement needs the Claude Code sandbox. The hooks below add a further layer.
+
+## Hooks
+
+Node scripts in `.claude/hooks/`, wired in `.claude/settings.json` (brief §9). Each reads the hook JSON on stdin. Exit 2 blocks and sends stderr back to Claude. Every block also appends one JSON line to `.claude/logs/blocked.jsonl` (gitignored). Tests live next to the scripts and run in the `hooks` Vitest project.
+
+| Hook                  | Event / matcher                                   | What it does                                                                                                                                                                                                                    |
+| --------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `guard-bash.mjs`      | PreToolUse `Bash`                                 | Blocks `rm` with recursive + force, force push (`--force`, `--force-with-lease`, `-f`, `+ref`), `git reset --hard`, `--no-verify` / `git commit -n`, `dropDatabase` / `.drop(` / SQL `DROP`, and curl/wget into a shell.        |
+| `guard-files.mjs`     | PreToolUse `Edit\|Write\|MultiEdit\|NotebookEdit` | `.env*`, `.github/workflows/`, `.claude/settings*.json` and `.claude/hooks/` require a human. `policies/**/*.yaml` is blocked until `git status` shows a changed `server/src/gate/**/*.test.ts` or `evals/` file (HARD RULE 5). |
+| `post-edit-check.mjs` | PostToolUse `Edit\|Write\|MultiEdit`              | Prettier, ESLint (`--fix`, zero warnings), then `vitest related` (or the test file itself), with about 20s in total. A failure is reported back to Claude.                                                                      |
+| `stop-check.mjs`      | Stop                                              | Runs `npm run typecheck` and `npm test`. On failure Claude keeps working. It skips when `stop_hook_active` is set, so it can't loop.                                                                                            |
+
+Notes:
+
+- **Fail closed.** The guards block on input they can't parse. The policy check blocks when git can't answer. Until the repo is a git repository, every `policies/` edit is blocked.
+- **Text matching.** `guard-bash` splits the command into whitespace-separated tokens. Commands inside quotes, such as `bash -c "rm -rf build"` or `sh -c 'git reset --hard'`, aren't caught yet. `--no-verify`, `DROP` and curl-to-shell are matched anywhere in the text, so `echo --no-verify` is blocked. Writes through Bash (`echo > .env`) are left to the permission deny rules above.
+- **Changing hooks.** A human edits `.claude/hooks/` and `.claude/settings.json`, then runs `npx vitest run --project hooks`.
+
+## Git hooks and CI
+
+These apply to every commit, whoever or whatever wrote it. Setup and the commit convention are in [CONTRIBUTING.md](../CONTRIBUTING.md).
+
+| Layer                               | What it does                                                                                                                                                                                                                                                              |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.husky/pre-commit`                 | lint-staged (Prettier, ESLint with zero warnings), then `gitleaks git --pre-commit --staged`. Fails closed if gitleaks isn't installed. `guard-bash` blocks `--no-verify` and `git commit -n`.                                                                            |
+| `.github/workflows/ci.yml`          | On PRs and pushes to `main`: `verify` (typecheck, lint, test, build), `gitleaks` (full history, checksum-pinned binary), `dependency-review` (PRs only) and `CodeQL` (javascript-typescript). Top-level `contents: read`, per-job timeouts, actions pinned by commit SHA. |
+| `.github/CODEOWNERS`                | Agent instructions, `.claude/`, `.husky/`, `.mcp.json`, `policies/`, `prompts/` and `.github/` need the code owner's review.                                                                                                                                              |
+| Branch protection (GitHub settings) | Set by hand. Required checks, code owner review, no force push. Not stored in the repo.                                                                                                                                                                                   |

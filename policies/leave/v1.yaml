@@ -1,0 +1,20 @@
+# Leave policy v1 (spec leave-policy, D-9). Synthetic values.
+# Validated by LeavePolicyV1 in server/src/gate/leave-policy.schema.ts; any change here
+# must change tests or evals in the same commit (HARD RULE 5). Changing even a comment
+# changes policyHash.
+version: v1
+effectiveFrom: '2026-10-01'
+leaveTypes: [annual, sick, casual, unpaid, bereavement, parental]
+minNoticeWorkingDays: { annual: 5, sick: 0, casual: 1, unpaid: 10, bereavement: 0, parental: 20 }
+requiredFields:
+  annual: [startDate, endDate]
+  sick: [startDate, endDate]
+  casual: [startDate, endDate]
+  unpaid: [startDate, endDate, reason]
+  bereavement: [startDate, endDate]
+  parental: [startDate, endDate]
+alwaysEscalate: [unpaid, bereavement, parental]
+blackoutWindows:
+  - { id: bw-year-end, start: '2026-12-21', end: '2026-12-31', label: Year-end close }
+maxTeamOverlapPercent: 30
+escalateAboveConsecutiveWorkingDays: 10

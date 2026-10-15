@@ -1,0 +1,1 @@
+The policy check returned {verdict}; rules not met: {failedRules}.

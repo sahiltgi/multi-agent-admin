@@ -1,0 +1,18 @@
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Environment files (keep the example)
+.env*
+!.env.example
+
+# Local-only Claude Code files
+CLAUDE.local.md
+.claude/settings.local.json
+.claude/logs/
+
+# Misc
+*.log
+.DS_Store
