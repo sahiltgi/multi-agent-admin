@@ -11,6 +11,7 @@ import {
   type SeedSummary,
 } from '../domain/schemas.js';
 import type { SeedFixtures } from './fixtures.js';
+import { createScrubber, secretsOfUri } from '../lib/secrets.js';
 import { checkSeedInvariants } from './invariants.js';
 
 export const SEED_COLLECTIONS = [
@@ -22,8 +23,14 @@ export const SEED_COLLECTIONS = [
 ] as const;
 export type SeedCollection = (typeof SEED_COLLECTIONS)[number];
 
+/** Collections that point at seeded requests; cleared so a reseed leaves no orphans (D-15). */
+export const SEED_CLEARED = ['approvalItems', 'messageOwners', 'idempotencyRecords'] as const;
+export type SeedClearedCollection = (typeof SEED_CLEARED)[number];
+
 export interface SeedWriter {
   connect(uri: string): Promise<void>;
+  /** Empties a collection the seed doesn't fill. Audit events are never cleared (append-only). */
+  clear(collection: SeedClearedCollection): Promise<void>;
   replaceAll(collection: SeedCollection, docs: readonly unknown[]): Promise<void>;
   disconnect(): Promise<void>;
 }
@@ -67,29 +74,8 @@ function parseFixtures(
   return errors.length > 0 ? { errors } : { fixtures };
 }
 
-/** The URI and its credentials, in every form a driver error might echo them. */
-function secretsOf(uri: string): string[] {
-  const secrets = [uri];
-  const userinfo = /^mongodb(?:\+srv)?:\/\/([^@/]*)@/.exec(uri)?.[1];
-  if (userinfo !== undefined && userinfo !== '') {
-    secrets.push(userinfo);
-    const password = userinfo.slice(userinfo.indexOf(':') + 1);
-    if (userinfo.includes(':') && password !== '') {
-      secrets.push(password);
-      try {
-        secrets.push(decodeURIComponent(password));
-      } catch {
-        // Not percent-encoded; the raw form is already covered.
-      }
-    }
-  }
-  // Longest first, so a whole URI is replaced before its parts.
-  return [...new Set(secrets)].sort((a, b) => b.length - a.length);
-}
-
 function scrubber(uri: string): (text: string) => string {
-  const secrets = secretsOf(uri);
-  return (text) => secrets.reduce((acc, s) => acc.split(s).join('[redacted]'), text);
+  return createScrubber(secretsOfUri(uri));
 }
 
 function describeError(err: unknown): string {
@@ -136,6 +122,18 @@ export async function runSeed(deps: SeedDeps): Promise<number> {
   } catch (err) {
     stderr(scrub(`seed: could not connect to MongoDB: ${describeError(err)}`));
     exitCode = 1;
+  }
+
+  if (exitCode === 0) {
+    for (const collection of SEED_CLEARED) {
+      try {
+        await writer.clear(collection);
+      } catch (err) {
+        stderr(scrub(`seed: clearing ${collection} failed: ${describeError(err)}. ${RERUN_HINT}`));
+        exitCode = 1;
+        break;
+      }
+    }
   }
 
   if (exitCode === 0) {

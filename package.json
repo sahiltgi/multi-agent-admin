@@ -18,6 +18,7 @@
     "test:integration": "node --env-file-if-exists=.env ./node_modules/vitest/vitest.mjs run --config server/vitest.integration.config.ts",
     "build": "npm run build --workspaces",
     "seed": "node --env-file-if-exists=.env --import tsx server/src/seeds/cli.ts",
+    "start": "node --env-file-if-exists=.env --import tsx server/src/index.ts",
     "evals": "node -e \"console.log('evals: placeholder, no cases yet')\"",
     "prepare": "husky"
   },

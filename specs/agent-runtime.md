@@ -420,7 +420,7 @@ Answers to the former open questions, approved by the owner on 2026-10-14. D-n a
   - **Identity keys:** the registry rejects identity keys in any tool input (rule 15). The list is a superset of `specs/leave-agent.md` rule 2, matched case- and separator-insensitively. A tool that needs a target person uses an explicit name such as `newHireId`, and its handler authorises it against `ctx.actor`.
   - **Base URL:** pinned (D-17).
   - **Input size:** `userText` ≤ 4,000 characters, at most 5 documents, each `text` ≤ 20,000 characters. Over-limit input fails `RunInput` with no model call and no audit event (AT-2). The API layer maps that to a 400.
-  - **Readable free text in the audit:** kept. HR needs the redacted request text and tool I/O for the audit trail. Only emails, phone numbers and ID-like numbers are masked (D-7), so names and leave reasons stay readable. Handoff to the MongoDB audit-sink spec: audit reads are `hr_admin`-only, and that spec sets the retention period.
+  - **Readable free text in the audit:** kept. HR needs the redacted request text and tool I/O for the audit trail. Only emails, phone numbers and ID-like numbers are masked (D-7), so names and leave reasons stay readable. Handoff to the MongoDB audit-sink spec: audit reads are `hr_admin`-only, and that spec sets the retention period. (Amended by `specs/mongo-persistence.md` D-1 and D-2 on 2026-10-16: audit events are kept forever for the MVP, and trace reads follow approval-queue rule 14 as amended by request-intake D-9, not `hr_admin`-only.)
   - **Evals:** the EV cases run once an eval runner exists (`specs/eval-runner.md`, to be written next).
 
 ## Open questions

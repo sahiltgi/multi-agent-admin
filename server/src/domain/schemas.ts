@@ -278,6 +278,21 @@ export const ServerEnv = z.object({
 });
 export type ServerEnv = z.infer<typeof ServerEnv>;
 
+// The running server's env (spec mongo-persistence, rule 9; D-5, D-6, D-18). ServerEnv above
+// stays the policy step's schema. Values are never printed: errors name the variable only.
+export const ServerRuntimeEnv = ServerEnv.extend({
+  NODE_ENV: z.string().trim().toLowerCase().optional(), // 'production', in any case, is refused (rule 11)
+  MONGODB_URI: SeedEnv.shape.MONGODB_URI,
+  PORT: z
+    .string()
+    .regex(/^\d{1,5}$/)
+    .default('3000') // D-5
+    .transform(Number)
+    .pipe(z.number().int().min(1).max(65535)),
+  ANTHROPIC_API_KEY: z.string().min(1), // required (D-6)
+});
+export type ServerRuntimeEnv = z.infer<typeof ServerRuntimeEnv>;
+
 // ---- Seed output: counts only, never names, emails or the connection URI ----
 export const SeedSummary = z
   .object({
