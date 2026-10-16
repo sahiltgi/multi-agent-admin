@@ -15,7 +15,7 @@ No subagent has the `Agent` tool, so none can spawn others.
 ## Workflow (HARD RULE 7)
 
 1. **spec-writer** drafts the spec.
-2. A human reviews it, clears the open questions and sets `Status: reviewed`.
+2. A human reviews it and clears the open questions, then sets `Status: reviewed` or replies "approved" so Claude sets it (`/new-feature` waits here).
 3. **test-writer** writes failing tests.
 4. Implement.
 5. Run the reviewers:
