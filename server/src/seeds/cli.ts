@@ -1,8 +1,14 @@
 // Entry point for `npm run seed`. `.env` is loaded by Node's --env-file-if-exists flag.
 import mongoose from 'mongoose';
 import { MODELS } from '../models/index.js';
+import { IdempotencyRecordModel, MessageOwnerModel } from '../persistence/mongo/models.js';
 import { fixtures } from './fixtures.js';
-import { runSeed, type SeedCollection, type SeedWriter } from './seed.js';
+import {
+  runSeed,
+  type SeedClearedCollection,
+  type SeedCollection,
+  type SeedWriter,
+} from './seed.js';
 
 const MODEL_FOR = {
   teams: MODELS.Team,
@@ -11,6 +17,13 @@ const MODEL_FOR = {
   holidays: MODELS.Holiday,
   leaveRequests: MODELS.LeaveRequest,
 } as const satisfies Record<SeedCollection, unknown>;
+
+// Audit events are never cleared: AuditEventModel is append-only (spec mongo-persistence, D-15).
+const CLEARED_MODEL = {
+  approvalItems: MODELS.ApprovalItem,
+  messageOwners: MessageOwnerModel,
+  idempotencyRecords: IdempotencyRecordModel,
+} as const satisfies Record<SeedClearedCollection, unknown>;
 
 /** The model methods the seed needs. Docs were Zod-parsed by runSeed before they get here. */
 interface SeedModel {
@@ -22,6 +35,10 @@ interface SeedModel {
 const writer: SeedWriter = {
   async connect(uri) {
     await mongoose.connect(uri, { serverSelectionTimeoutMS: 5_000 });
+  },
+  async clear(collection) {
+    const model: Pick<SeedModel, 'deleteMany'> = CLEARED_MODEL[collection];
+    await model.deleteMany({}).exec();
   },
   async replaceAll(collection, docs) {
     const model: SeedModel = MODEL_FOR[collection];
