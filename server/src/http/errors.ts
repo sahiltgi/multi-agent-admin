@@ -12,6 +12,7 @@ export const ErrorCode = z.enum([
   'already_decided',
   'gate_result_changed',
   'gate_result_missing',
+  'idempotency_conflict', // request-intake D-11
   'internal_error',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
@@ -44,6 +45,10 @@ const ERRORS: Record<ErrorCode, { status: number; message: string }> = {
   already_decided: { status: 409, message: 'This item has already been decided.' },
   gate_result_changed: { status: 409, message: 'The gate result has changed since you saw it.' },
   gate_result_missing: { status: 409, message: 'This item has no gate result to decide on.' },
+  idempotency_conflict: {
+    status: 409,
+    message: 'This idempotency key was already used for a different or unfinished message.',
+  },
   internal_error: { status: 500, message: 'Something went wrong.' },
 };
 

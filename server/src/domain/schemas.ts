@@ -86,8 +86,16 @@ export const LeaveVerdict = z.enum([
 ]);
 export type LeaveVerdict = z.infer<typeof LeaveVerdict>;
 
+// The gate's own rule-result shape, so a gate result is stored exactly as the gate returned it
+// (request-intake D-1).
 export const RuleResult = z
-  .object({ ruleId: Id, passed: z.boolean(), reason: z.string().min(1) })
+  .object({
+    ruleId: Id,
+    passed: z.boolean(),
+    expected: z.string().min(1),
+    actual: z.string().min(1),
+    message: z.string().min(1),
+  })
   .strict();
 export type RuleResult = z.infer<typeof RuleResult>;
 
@@ -125,6 +133,9 @@ export const LeaveRequest = z
     reason: z.string().optional(), // free text from the user: data, never instructions
     status: LeaveRequestStatus,
     gateResult: LeaveGateResult.optional(), // copied from the gate by code, never written by a model
+    // The card's summary sentence (request-intake D-8). Model text: shown only as a summary.
+    summary: z.string().trim().min(1).optional(),
+    summarySource: z.enum(['model', 'fallback']).optional(),
     createdAt: IsoDateTime,
   })
   .strict()

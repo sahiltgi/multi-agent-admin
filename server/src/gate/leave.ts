@@ -693,14 +693,20 @@ export function evaluateLeave(
   );
 }
 
-/** Maps the gate result to the domain shape stored on LeaveRequest.gateResult (D-3). */
+/**
+ * The gate result in the domain shape stored on LeaveRequest.gateResult (D-3). Since
+ * request-intake D-1 the domain RuleResult equals LeaveRuleResult, so rule results are copied
+ * unchanged: nothing is renamed or dropped.
+ */
 export function toDomainGateResult(result: LeaveGateResult): DomainLeaveGateResult {
   return {
     verdict: result.verdict,
     ruleResults: result.ruleResults.map((r) => ({
       ruleId: r.ruleId,
       passed: r.passed,
-      reason: r.message,
+      expected: r.expected,
+      actual: r.actual,
+      message: r.message,
     })),
     reason: result.reason,
     policyVersion: result.policyVersion,

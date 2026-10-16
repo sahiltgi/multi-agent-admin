@@ -754,9 +754,8 @@ describe('evaluateLeave: output shape (rules 12-15)', () => {
       const domain = toDomainGateResult(res);
       expect(DomainGateResult.safeParse(domain).success, s.name).toBe(true);
       expect(domain.verdict).toBe(res.verdict);
-      expect(domain.ruleResults.map((r) => r.reason)).toEqual(
-        res.ruleResults.map((r) => r.message),
-      );
+      // request-intake D-1: the domain shape equals the gate's, so every field is copied.
+      expect(domain.ruleResults).toEqual(res.ruleResults);
     }
   });
 

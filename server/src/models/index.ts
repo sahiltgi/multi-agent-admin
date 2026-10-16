@@ -70,7 +70,13 @@ const leaveBalanceSchema = new Schema<LeaveBalance>(
 leaveBalanceSchema.index({ employeeId: 1, leaveType: 1, period: 1 }, { unique: true });
 
 const ruleResultSchema = new Schema<RuleResult>(
-  { ruleId: requiredString, passed: requiredBoolean, reason: requiredString },
+  {
+    ruleId: requiredString,
+    passed: requiredBoolean,
+    expected: requiredString,
+    actual: requiredString,
+    message: requiredString,
+  },
   SUBDOCUMENT,
 );
 
@@ -97,6 +103,8 @@ const leaveRequestSchema = new Schema<LeaveRequest>(
     reason: optionalString,
     status: requiredEnum(LeaveRequestStatus.options),
     gateResult: { type: leaveGateResultSchema, required: false },
+    summary: optionalString,
+    summarySource: { type: String, required: false, enum: ['model', 'fallback'] },
     createdAt: requiredString,
   },
   TOP_LEVEL,

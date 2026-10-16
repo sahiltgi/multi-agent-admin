@@ -45,10 +45,14 @@ export function actDenial(actor: Actor, ctx: ItemContext): ActDenial | null {
   return null;
 }
 
-/** Rule 14: hr_admin reads any trace, the owner reads theirs, a manager their direct reports'. */
-export function canReadTrace(actor: Actor, owner: Employee | null): boolean {
+/**
+ * Rule 14: hr_admin reads any trace, the owner reads theirs, a manager their direct reports'
+ * leave-request traces. A trace with no LeaveRequest (a policy question, a refused message) is
+ * the sender's and hr_admin's only, since it may be about the manager (request-intake D-9).
+ */
+export function canReadTrace(actor: Actor, owner: Employee | null, isLeave: boolean): boolean {
   if (actor.role === 'hr_admin') return true;
   if (owner === null) return false;
   if (owner.id === actor.employeeId) return true;
-  return actor.role === 'manager' && owner.managerId === actor.employeeId;
+  return isLeave && actor.role === 'manager' && owner.managerId === actor.employeeId;
 }

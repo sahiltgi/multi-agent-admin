@@ -52,6 +52,19 @@ export class InMemoryApprovalStore implements ApprovalStore {
     this.byId.set(item.id, structuredClone(item));
     return Promise.resolve(true);
   }
+
+  /** Adds a new item; false if the id exists, never overwrites (request-intake D-2). */
+  insert(item: ApprovalItem): Promise<boolean> {
+    if (this.byId.has(item.id)) return Promise.resolve(false);
+    this.byId.set(item.id, structuredClone(item));
+    return Promise.resolve(true);
+  }
+
+  /** Compensation only: undoes an insert whose later writes failed (request-intake D-13). */
+  remove(id: string): Promise<void> {
+    this.byId.delete(id);
+    return Promise.resolve();
+  }
 }
 
 export class InMemorySubjectResolver implements SubjectResolver {
@@ -73,6 +86,10 @@ export class InMemorySubjectResolver implements SubjectResolver {
 
   ownerOfRequest(requestId: string): Promise<string | null> {
     return Promise.resolve(this.byId.get(requestId)?.employeeId ?? null);
+  }
+
+  isLeaveRequest(requestId: string): Promise<boolean> {
+    return Promise.resolve(this.byId.has(requestId));
   }
 }
 
