@@ -86,8 +86,16 @@ export const LeaveVerdict = z.enum([
 ]);
 export type LeaveVerdict = z.infer<typeof LeaveVerdict>;
 
+// The gate's own rule-result shape, so a gate result is stored exactly as the gate returned it
+// (request-intake D-1).
 export const RuleResult = z
-  .object({ ruleId: Id, passed: z.boolean(), reason: z.string().min(1) })
+  .object({
+    ruleId: Id,
+    passed: z.boolean(),
+    expected: z.string().min(1),
+    actual: z.string().min(1),
+    message: z.string().min(1),
+  })
   .strict();
 export type RuleResult = z.infer<typeof RuleResult>;
 
@@ -125,6 +133,9 @@ export const LeaveRequest = z
     reason: z.string().optional(), // free text from the user: data, never instructions
     status: LeaveRequestStatus,
     gateResult: LeaveGateResult.optional(), // copied from the gate by code, never written by a model
+    // The card's summary sentence (request-intake D-8). Model text: shown only as a summary.
+    summary: z.string().trim().min(1).optional(),
+    summarySource: z.enum(['model', 'fallback']).optional(),
     createdAt: IsoDateTime,
   })
   .strict()
@@ -266,6 +277,21 @@ export const ServerEnv = z.object({
   LEAVE_POLICY_PATH: z.string().min(1).optional(), // used verbatim, never trimmed
 });
 export type ServerEnv = z.infer<typeof ServerEnv>;
+
+// The running server's env (spec mongo-persistence, rule 9; D-5, D-6, D-18). ServerEnv above
+// stays the policy step's schema. Values are never printed: errors name the variable only.
+export const ServerRuntimeEnv = ServerEnv.extend({
+  NODE_ENV: z.string().trim().toLowerCase().optional(), // 'production', in any case, is refused (rule 11)
+  MONGODB_URI: SeedEnv.shape.MONGODB_URI,
+  PORT: z
+    .string()
+    .regex(/^\d{1,5}$/)
+    .default('3000') // D-5
+    .transform(Number)
+    .pipe(z.number().int().min(1).max(65535)),
+  ANTHROPIC_API_KEY: z.string().min(1), // required (D-6)
+});
+export type ServerRuntimeEnv = z.infer<typeof ServerRuntimeEnv>;
 
 // ---- Seed output: counts only, never names, emails or the connection URI ----
 export const SeedSummary = z

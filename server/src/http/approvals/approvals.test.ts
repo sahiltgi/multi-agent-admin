@@ -35,7 +35,15 @@ import {
 const POLICY_HASH = '0123456789abcdef'.repeat(4);
 const G: LeaveGateResult = {
   verdict: 'ROUTE_TO_MANAGER',
-  ruleResults: [{ ruleId: 'balance', passed: true, reason: 'Synthetic reason' }],
+  ruleResults: [
+    {
+      ruleId: 'balance',
+      passed: true,
+      expected: 'Synthetic expected',
+      actual: 'Synthetic actual',
+      message: 'Synthetic reason',
+    },
+  ],
   reason: 'Synthetic gate reason',
   policyVersion: 'v1',
   policyHash: POLICY_HASH,
@@ -43,7 +51,15 @@ const G: LeaveGateResult = {
 const GF: LeaveGateResult = {
   ...G,
   verdict: 'ROUTE_TO_MANAGER_WITH_FLAGS',
-  ruleResults: [{ ruleId: 'team_overlap', passed: false, reason: 'Synthetic flag reason' }],
+  ruleResults: [
+    {
+      ruleId: 'team_overlap',
+      passed: false,
+      expected: 'Synthetic expected',
+      actual: 'Synthetic actual',
+      message: 'Synthetic flag reason',
+    },
+  ],
 };
 const ESC: LeaveGateResult = { ...G, verdict: 'ESCALATE_TO_HR' };
 const seenOf = (g: LeaveGateResult) => ({ verdict: g.verdict, policyHash: g.policyHash });

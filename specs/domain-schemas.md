@@ -358,6 +358,8 @@ Answers to the former open questions, approved by the owner on 2026-10-14.
 - **D-16 (env var):** `MONGODB_URI`, as in `.env.example`.
 - **D-17 (evals):** EV-10 to EV-12 are enough; eval cases are implemented when the agents exist.
 
+- **Amended by `specs/request-intake.md` (2026-10-16):** D-1 changes `RuleResult` to the gate's shape `{ ruleId, passed, expected, actual, message }`, so a gate result is stored exactly as returned. D-8 adds optional `summary` (trimmed, non-empty) and `summarySource` (`'model' | 'fallback'`) to `LeaveRequest`. The Mongoose schemas follow.
+
 ## Open questions
 
 None.

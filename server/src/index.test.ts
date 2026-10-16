@@ -37,7 +37,7 @@ function runServer(policyPath?: string) {
   const env: NodeJS.ProcessEnv = { ...process.env };
   delete env.LEAVE_POLICY_PATH;
   if (policyPath !== undefined) env.LEAVE_POLICY_PATH = policyPath;
-  const r = spawnSync('node', ['--import', 'tsx', 'server/src/index.ts'], {
+  const r = spawnSync('node', ['--import', 'tsx', 'server/src/index.ts', '--check-policy'], {
     cwd: REPO_ROOT,
     env,
     encoding: 'utf8',

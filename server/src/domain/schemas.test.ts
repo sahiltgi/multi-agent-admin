@@ -11,6 +11,7 @@ import {
   LeaveRequest,
   OnboardingChecklist,
   Role,
+  RuleResult,
   ServerEnv,
   Team,
 } from './schemas.js';
@@ -61,7 +62,7 @@ const validRequest = {
 
 const validGateResult = {
   verdict: 'ROUTE_TO_MANAGER',
-  ruleResults: [{ ruleId: 'rule-1', passed: true, reason: 'ok' }],
+  ruleResults: [{ ruleId: 'rule-1', passed: true, expected: 'ok', actual: 'ok', message: 'ok' }],
   reason: 'All rules passed',
   policyVersion: '1',
   policyHash: 'abc123',
@@ -318,6 +319,75 @@ describe('domain schemas', () => {
     expect(LeavePeriod.safeParse('2026-27').success).toBe(true);
     for (const bad of ['2026-28', '26-27', '2026/27']) {
       expect(LeavePeriod.safeParse(bad).success).toBe(false);
+    }
+  });
+});
+
+describe('request-intake domain amendments (D-1, D-8)', () => {
+  const gateRule = {
+    ruleId: 'balance_sufficient',
+    passed: true,
+    expected: 'Balance covers the request',
+    actual: 'Balance covers the request',
+    message: 'Balance is sufficient.',
+  };
+  const gate = { ...validGateResult, ruleResults: [gateRule] };
+
+  it('request-intake D-1: RuleResult takes { ruleId, passed, expected, actual, message }', () => {
+    expect(RuleResult.safeParse(gateRule).success).toBe(true);
+    expect(LeaveRequest.safeParse({ ...validRequest, gateResult: gate }).success).toBe(true);
+  });
+
+  it('request-intake D-1: RuleResult rejects the old { reason } shape', () => {
+    const old = { ruleId: 'balance_sufficient', passed: true, reason: 'ok' };
+    expect(RuleResult.safeParse(old).success).toBe(false);
+    expect(RuleResult.safeParse({ ...gateRule, reason: 'ok' }).success).toBe(false);
+    expect(
+      LeaveRequest.safeParse({
+        ...validRequest,
+        gateResult: { ...validGateResult, ruleResults: [old] },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('request-intake D-1: every RuleResult field is required and the strings are non-empty', () => {
+    for (const key of ['ruleId', 'passed', 'expected', 'actual', 'message']) {
+      expect(RuleResult.safeParse(without(gateRule, key)).success, key).toBe(false);
+    }
+    for (const key of ['expected', 'actual', 'message']) {
+      expect(RuleResult.safeParse({ ...gateRule, [key]: '' }).success, key).toBe(false);
+    }
+  });
+
+  it('request-intake D-8: LeaveRequest accepts a summary and a summarySource', () => {
+    for (const summarySource of ['model', 'fallback']) {
+      expect(
+        LeaveRequest.safeParse({ ...validRequest, summary: 'A short summary.', summarySource })
+          .success,
+        summarySource,
+      ).toBe(true);
+    }
+    expect(LeaveRequest.safeParse({ ...validRequest, summary: 'A short summary.' }).success).toBe(
+      true,
+    );
+  });
+
+  it('request-intake D-8: summary is trimmed and must not be blank', () => {
+    const ok = LeaveRequest.safeParse({ ...validRequest, summary: '  A short summary.  ' });
+    expect(ok.success).toBe(true);
+    if (ok.success) expect(ok.data.summary).toBe('A short summary.');
+    expect(LeaveRequest.safeParse({ ...validRequest, summary: '   ' }).success).toBe(false);
+    expect(LeaveRequest.safeParse({ ...validRequest, summary: '' }).success).toBe(false);
+    expect(LeaveRequest.safeParse({ ...validRequest, summary: 5 }).success).toBe(false);
+  });
+
+  it('request-intake D-8: summarySource rejects values other than model and fallback', () => {
+    for (const bad of ['human', 'MODEL', '', null]) {
+      expect(
+        LeaveRequest.safeParse({ ...validRequest, summary: 'A short summary.', summarySource: bad })
+          .success,
+        String(bad),
+      ).toBe(false);
     }
   });
 });

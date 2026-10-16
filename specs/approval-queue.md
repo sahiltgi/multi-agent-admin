@@ -256,7 +256,7 @@ No rule maps to a Policy Gate rule id. These routes record human decisions next 
 14. **Who reads which trace (OQ-2):**
     - `hr_admin` reads any trace (brief §3);
     - an employee reads only traces of requests they own;
-    - a manager reads their own and their direct reports' traces.
+    - a manager reads their own traces, and their direct reports' traces only when the trace belongs to a `LeaveRequest` (`SubjectResolver.isLeaveRequest`). A trace of any other message is readable by its sender and `hr_admin` only (amended by request-intake D-9, 2026-10-16).
 
     Nobody reads a trace of a request owned by another employee unless one of these grants covers it. A denied read gives 404 `not_found` (OQ-1), the same as an unknown request, and the body contains no events. (gate rule: none)
 
@@ -464,8 +464,10 @@ Category: `routing | extraction | verdict | citation | injection`. These categor
 
 Answered by the owner on 2026-10-15 (accepted the proposed defaults). Each answer is written into the rules and ATs it touched.
 
+- **Amended by `specs/request-intake.md` (2026-10-16):** OQ-8 (item creation) is settled there: intake creates the `leave_request` items. `InMemoryApprovalStore` gains `insert` (never overwrites) and `remove` (compensation only); the `ApprovalStore` interface is unchanged. The `idempotency_conflict` error code (409) is added for intake. `SubjectResolver` gains `isLeaveRequest(requestId)`, and rule 14 changes: a manager reads a direct report's trace only when it belongs to a `LeaveRequest`; any other trace is the sender's and `hr_admin`'s only.
+
 - **OQ-1 (denials):** 404 `not_found` for out-of-scope items and traces, so existence isn't revealed. Refused attempts are not audited in this spec, and no `AuditEvent.eventType` is added. Rules 5, 6, 14; AT-8, AT-11, AT-12, AT-23.
-- **OQ-2 (trace readers):** `hr_admin` reads any trace, an employee reads their own requests' traces, and a manager reads their own and their direct reports'. Rule 14; AT-24.
+- **OQ-2 (trace readers):** `hr_admin` reads any trace, an employee reads their own requests' traces, and a manager reads their own and their direct reports' leave-request traces (a non-leave message trace is the sender's and `hr_admin`'s only, per request-intake D-9). Rule 14; AT-24.
 - **OQ-3 (hr_admin scope):** `hr_admin` sees and acts only on hr_admin-assigned items (plus their own, read-only). An `ESCALATE_TO_HR` leave is a `leave_request` item with `assigneeRole: 'hr_admin'`. Rule 5; AT-7, AT-12.
 - **OQ-4 (manager's own leave):** handled by `hr_admin` through an hr_admin-assigned `leave_request` item. The item-creation spec (OQ-8) does the assignment. Rules 5, 7.
 - **OQ-5 (comments):** a comment doesn't change `status` or `decision`. It's stored only as a `human_action` audit event. There can be several, and commenting is allowed in any status. Rules 9, 11; AT-16, AT-17.

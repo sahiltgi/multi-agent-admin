@@ -24,12 +24,19 @@ interface Harness {
   ) => Parameters<typeof runSeed>[0];
 }
 
-function harness(opts: { connectError?: Error; failReplaceAt?: number } = {}): Harness {
+function harness(
+  opts: { connectError?: Error; failReplaceAt?: number; failClear?: Error } = {},
+): Harness {
   const calls: string[] = [];
   const replaced: SeedCollection[] = [];
   const stdout: string[] = [];
   const stderr: string[] = [];
   const writer: SeedWriter = {
+    clear: (collection) => {
+      calls.push(`clear:${collection}`);
+      if (opts.failClear) return Promise.reject(opts.failClear);
+      return Promise.resolve();
+    },
     connect: () => {
       calls.push('connect');
       if (opts.connectError) return Promise.reject(opts.connectError);
@@ -124,6 +131,39 @@ describe('runSeed', () => {
     const code = await runSeed(h.deps({ MONGODB_URI: GOOD_URI }));
     expect(code).not.toBe(0);
     expect(h.stderr.join('\n')).toContain('npm run seed');
+    expect(h.calls).toContain('disconnect');
+  });
+
+  it('AT-20: (mongo-persistence D-15) clears exactly the three collections after connect and before any replaceAll', async () => {
+    const h = harness();
+    const code = await runSeed(h.deps({ MONGODB_URI: GOOD_URI }));
+    expect(code).toBe(0);
+    const clears = h.calls.filter((c) => c.startsWith('clear:'));
+    expect([...clears].sort()).toEqual([
+      'clear:approvalItems',
+      'clear:idempotencyRecords',
+      'clear:messageOwners',
+    ]);
+    expect(clears.some((c) => c.toLowerCase().includes('audit'))).toBe(false);
+    const connectAt = h.calls.indexOf('connect');
+    const firstReplace = h.calls.indexOf('replaceAll');
+    const lastClear = Math.max(...clears.map((c) => h.calls.indexOf(c)));
+    expect(connectAt).toBeGreaterThanOrEqual(0);
+    expect(Math.min(...clears.map((c) => h.calls.indexOf(c)))).toBeGreaterThan(connectAt);
+    expect(lastClear).toBeLessThan(firstReplace);
+  });
+
+  it('AT-20: (mongo-persistence D-15) a rejecting clear exits 1, names clearing, leaks no URI or password, and disconnects', async () => {
+    const uri = 'mongodb://user:pass-clr-9@localhost:27017/hr';
+    const h = harness({ failClear: new Error(`cannot clear on ${uri}`) });
+    const code = await runSeed(h.deps({ MONGODB_URI: uri }));
+    expect(code).toBe(1);
+    const err = h.stderr.join('\n');
+    expect(err).toContain('clearing');
+    expect(err).not.toContain('pass-clr-9');
+    expect(err).not.toContain(uri);
+    expect(h.stdout.join('\n')).not.toContain('pass-clr-9');
+    expect(h.replaced).toEqual([]);
     expect(h.calls).toContain('disconnect');
   });
 });

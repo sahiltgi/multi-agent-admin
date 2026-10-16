@@ -32,6 +32,8 @@ export interface SubjectResolver {
   resolve(item: ApprovalItem): Promise<ResolvedSubject | null>;
   /** The owner of a trace's request (rule 14); null if the request is unknown. */
   ownerOfRequest(requestId: string): Promise<string | null>;
+  /** True when the trace belongs to a LeaveRequest, not only a message (request-intake D-9). */
+  isLeaveRequest(requestId: string): Promise<boolean>;
 }
 
 export interface AuditReader {

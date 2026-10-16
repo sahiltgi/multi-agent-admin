@@ -200,7 +200,8 @@ export function createApprovalRoutes(deps: ApprovalApiDeps): RouteDefinition[] {
       if (ownerId === null) throw new HttpError('not_found');
       const owner = await deps.directory.getById(ownerId);
       // A denied read looks the same as an unknown request (OQ-1).
-      if (!canReadTrace(actor, owner)) throw new HttpError('not_found');
+      const isLeave = await deps.subjects.isLeaveRequest(params.requestId);
+      if (!canReadTrace(actor, owner, isLeave)) throw new HttpError('not_found');
       const events = (await deps.auditReader.listByTrace(params.requestId)).map((e) =>
         AuditEvent.parse(e),
       );
