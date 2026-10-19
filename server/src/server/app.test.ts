@@ -101,6 +101,12 @@ function makeWorld(
     leaveRequests,
     audit,
     idempotency: new InMemoryIdempotencyStore(),
+    conversations: {
+      get: () => Promise.resolve(null),
+      insert: () => Promise.resolve(true),
+      saveIfVersion: () => Promise.resolve(true),
+      remove: () => Promise.resolve(),
+    },
     leaveData: {
       getBalances: () => Promise.resolve([]),
       getHolidays: () => Promise.resolve([]),
@@ -213,7 +219,7 @@ describe('buildApp', () => {
     expect(w.sink.events).toHaveLength(0);
   });
 
-  it('AT-14: the route table is the four approval-queue routes plus POST /messages and GET /my-requests', () => {
+  it('AT-14: the route table is the four approval-queue routes plus POST /messages, GET /my-requests, POST /chat and GET /conversations/:id (chat-endpoint amendment)', () => {
     const w = makeWorld();
     expect(routeTable(buildApp(w.parts))).toEqual(
       [
@@ -223,6 +229,8 @@ describe('buildApp', () => {
         'GET /audit/:requestId',
         'POST /messages',
         'GET /my-requests',
+        'POST /chat',
+        'GET /conversations/:id',
       ].sort(),
     );
   });

@@ -331,26 +331,43 @@ describe('classifyMessage', () => {
     expect(JSON.stringify(decision)).not.toContain('leave request');
   });
 
-  it('AT-9: every non-completed outcome falls back as run_not_completed and is never a sub-agent', async () => {
+  it('AT-9: every non-completed outcome falls back (timeout and model_error as model_unavailable, the rest as run_not_completed; chat-endpoint amendment) and is never a sub-agent', async () => {
     const hang: Step = (_req, opts) =>
       new Promise((resolve) => {
         opts.signal.addEventListener('abort', () => {
           resolve(resp('end_turn', [text('late')]));
         });
       });
-    const cases: { name: string; script: Step[]; repeat?: boolean; advance?: number }[] = [
+    const cases: {
+      name: string;
+      script: Step[];
+      reason: string;
+      repeat?: boolean;
+      advance?: number;
+    }[] = [
       {
         name: 'max_turns',
         script: [resp('tool_use', [toolUse('tu-1', 'route', { label: 'leave' })])],
+        reason: 'run_not_completed',
         repeat: true,
       },
-      { name: 'timeout', script: [hang], advance: 30000 },
+      { name: 'timeout', script: [hang], reason: 'model_unavailable', advance: 30000 },
       {
         name: 'tool_violation',
         script: [resp('tool_use', [toolUse('tu-1', 'approve_leave', {})])],
+        reason: 'run_not_completed',
       },
-      { name: 'refusal', script: [resp('refusal', [text('no')])] },
-      { name: 'error', script: [() => Promise.reject(new Error('synthetic 500 error'))] },
+      { name: 'refusal', script: [resp('refusal', [text('no')])], reason: 'run_not_completed' },
+      {
+        name: 'error',
+        script: [() => Promise.reject(new Error('synthetic 500 error'))],
+        reason: 'model_unavailable',
+      },
+      {
+        name: 'error_max_tokens',
+        script: [resp('max_tokens', [])],
+        reason: 'run_not_completed',
+      },
     ];
     for (const c of cases) {
       const { run, clock } = setup(c.script, { repeat: c.repeat ?? false });
@@ -360,7 +377,7 @@ describe('classifyMessage', () => {
         clock.advance(c.advance);
       }
       const decision = await p;
-      expect(decision, c.name).toMatchObject(FALLBACK_ARM('run_not_completed'));
+      expect(decision, c.name).toMatchObject(FALLBACK_ARM(c.reason));
       expect(['leave', 'policy_qa', 'onboarding', 'out_of_scope']).not.toContain(
         asRec(decision).label,
       );

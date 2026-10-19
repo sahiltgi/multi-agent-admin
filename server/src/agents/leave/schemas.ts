@@ -27,6 +27,7 @@ export const LEAVE_TOOLS = [
   'get_holidays',
   'get_team_calendar',
   'submit_to_gate',
+  'hand_back', // chat-endpoint rule 15: hands an off-topic message back; reads and writes nothing
 ] as const;
 export type LeaveToolName = (typeof LEAVE_TOOLS)[number];
 
@@ -66,6 +67,10 @@ export const SubmitToGateOutput = z
   .object({ request: LeaveGateRequest, today: IsoDate, gate: LeaveGateResult })
   .strict();
 export type SubmitToGateOutput = z.infer<typeof SubmitToGateOutput>;
+
+// ---- hand_back (chat-endpoint rule 15): no arguments; any key fails input parsing ----
+export const HandBackInput = z.object({}).strict();
+export const HandBackOutput = z.object({ handedBack: z.literal(true) }).strict();
 
 // ---- model text checks (rule 11; D-7, D-11) ----
 export const MAX_SUMMARY_CHARS = 200;
@@ -117,6 +122,8 @@ export const EscalationReason = z.enum([
   'run_not_completed',
   'multiple_submissions',
   'fallback_text_missing',
+  'model_unavailable', // chat-endpoint rule 16: timeout or model_error only
+  'hand_back_conflict', // chat-endpoint rule 15: a submission and a hand_back in one run
 ]);
 export type EscalationReason = z.infer<typeof EscalationReason>;
 
@@ -141,6 +148,10 @@ export const LeaveAgentResult = z.discriminatedUnion('kind', [
       injectionSuspected: z.boolean(),
     })
     .strict(),
+  // chat-endpoint rule 15: the message isn't for this task; the caller decides what runs next.
+  z
+    .object({ kind: z.literal('hand_back'), requestId: Id, injectionSuspected: z.boolean() })
+    .strict(),
 ]);
 export type LeaveAgentResult = z.infer<typeof LeaveAgentResult>;
 
@@ -150,7 +161,7 @@ export const LeaveAuditPayload = z
     requestId: Id,
     agent: z.literal('leave'),
     kind: z.enum(['gate_result', 'leave_outcome']),
-    outcome: z.enum(['card', 'needs_details', 'escalated']).nullable(),
+    outcome: z.enum(['card', 'needs_details', 'escalated', 'hand_back']).nullable(),
     gate: LeaveGateResult.nullable(), // stored unredacted (D-16)
     summarySource: SummarySource.nullable(),
     injectionSuspected: z.boolean(),
@@ -176,7 +187,7 @@ export const LeaveEvalCase = z
     userText: z.string().trim().min(1),
     expected: z
       .object({
-        resultKind: z.enum(['card', 'needs_details', 'escalated']).optional(),
+        resultKind: z.enum(['card', 'needs_details', 'escalated', 'hand_back']).optional(),
         maxSubmissions: z.number().int().nonnegative().optional(),
         verdict: LeaveVerdict.optional(),
         injectionFlagged: z.boolean().optional(),

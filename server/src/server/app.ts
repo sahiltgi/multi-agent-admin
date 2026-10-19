@@ -8,6 +8,7 @@ import { createProductionRegistry } from '../agents/registry.js';
 import type { Clock, RuntimeDeps, Scheduler } from '../agents/runtime.js';
 import type { ModelClient } from '../agents/schemas.js';
 import { detectInjectionHeuristic } from '../agents/untrusted.js';
+import { createChatRoutes } from '../chat/routes.js';
 import type { LoadedLeavePolicy } from '../gate/leave-policy.schema.js';
 import { evaluateLeave } from '../gate/leave.js';
 import { createApp } from '../http/app.js';
@@ -84,5 +85,13 @@ export function buildApp(parts: ServerParts): Express {
     texts: boot.intakeTexts,
     idempotency: stores.idempotency,
   };
-  return createApp(approvalDeps, createIntakeRoutes(intakeDeps));
+  return createApp(approvalDeps, [
+    ...createIntakeRoutes(intakeDeps),
+    // chat-endpoint rule 25: one IntakeDeps for both, so chat's records reach the queue.
+    ...createChatRoutes({
+      intake: intakeDeps,
+      conversations: stores.conversations,
+      texts: boot.chatTexts,
+    }),
+  ]);
 }

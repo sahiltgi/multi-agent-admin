@@ -1,4 +1,4 @@
-// The four Leave Agent tools (spec leave-agent, rules 1 to 5, 8, 14, 16; D-19, D-21). Identity
+// The five Leave Agent tools (spec leave-agent, rules 1 to 5, 8, 14, 16; D-19, D-21). Identity
 // comes only from ctx.actor, port data is Zod-parsed, and submit_to_gate gathers the gate context
 // itself and calls the injected pure gate once. No tool can approve, reject or act for anyone else.
 import { z } from 'zod';
@@ -17,6 +17,8 @@ import {
   GetMyBalanceOutput,
   GetTeamCalendarInput,
   GetTeamCalendarOutput,
+  HandBackInput,
+  HandBackOutput,
   LeaveAuditPayload,
   SubmitToGateInput,
   SubmitToGateOutput,
@@ -192,6 +194,14 @@ export function buildLeaveTools(deps: LeaveAgentDeps): LeaveTool[] {
         await writeGateResult(deps, ctx, gate);
         return { request, today, gate };
       },
+    }),
+    // chat-endpoint rule 15: pure. It reads no port, clock or gate; runLeaveAgent sees the call.
+    erase({
+      name: 'hand_back',
+      description: toolDescriptions.hand_back,
+      inputSchema: HandBackInput,
+      outputSchema: HandBackOutput,
+      handler: () => Promise.resolve({ handedBack: true as const }),
     }),
   ];
 }

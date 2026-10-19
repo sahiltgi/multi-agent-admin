@@ -1,0 +1,1 @@
+Hand the employee's latest message back when it is not about this leave request, such as a policy or onboarding question, another topic, or dropping the request. Takes no arguments, reads nothing and changes nothing. Never call it in the same request as submit_to_gate, and never instead of asking for a missing detail.

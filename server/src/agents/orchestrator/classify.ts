@@ -24,7 +24,12 @@ type Choice =
 
 /** Rules 6 and 7: the model's choice counts only for a completed run with exactly one route call. */
 function choose(result: RunResult): Choice {
-  if (result.outcome !== 'completed') return { source: 'fallback', reason: 'run_not_completed' };
+  if (result.outcome !== 'completed') {
+    // chat-endpoint rule 16: only an API timeout or error is model_unavailable; the rest is unchanged.
+    const apiFailure =
+      result.outcome === 'timeout' || (result.outcome === 'error' && result.code === 'model_error');
+    return { source: 'fallback', reason: apiFailure ? 'model_unavailable' : 'run_not_completed' };
+  }
   const calls = result.toolCalls.filter((c) => c.tool === 'route');
   if (calls.length === 0) return { source: 'fallback', reason: 'no_route_call' };
   if (calls.length > 1 || result.toolCalls.length > 1) {

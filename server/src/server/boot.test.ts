@@ -39,6 +39,21 @@ describe('loadBootFiles', () => {
     await expect(loadBootFiles(root)).rejects.toThrow(file);
   });
 
+  it.each([
+    ['chat', 'messages', 'retry.txt'],
+    ['chat', 'messages', 'submitted.txt'],
+    ['chat', 'messages', 'draft_too_long.txt'],
+    ['chat', 'messages', 'draft_template.txt'],
+    ['intake', 'messages', 'hand_back.txt'],
+    ['leave', 'tools', 'hand_back.md'],
+    ['leave', 'v2.md'],
+  ])('AT-31: a missing %s boot file rejects naming its path (chat-endpoint)', async (...parts) => {
+    const root = copyOfPrompts();
+    const file = join(root, ...parts);
+    rmSync(file, { force: true });
+    await expect(loadBootFiles(root)).rejects.toThrow(file);
+  });
+
   it('D-6: a prompts root that does not exist rejects', async () => {
     const missing = join(tmpdir(), 'boot-prompts-does-not-exist-0000');
     await expect(loadBootFiles(missing)).rejects.toThrow();

@@ -15,6 +15,7 @@ const LEAVE_TOOL_NAMES = [
   'get_holidays',
   'get_team_calendar',
   'submit_to_gate',
+  'hand_back', // chat-endpoint amendment (D-21): a fifth required description
 ] as const;
 
 async function leaveTempRoot(overrides: Record<string, string | null> = {}): Promise<string> {
@@ -71,13 +72,14 @@ describe('tool descriptions', () => {
     expect(d.route).toBe(text.trim());
   });
 
-  it('D-21: loadLeaveToolDescriptions returns the trimmed text for each of the four tools', async () => {
+  it('D-21: loadLeaveToolDescriptions returns the trimmed text for each of the five tools', async () => {
     const d = await loadLeaveToolDescriptions(await leaveTempRoot());
     expect(d).toEqual({
       get_my_balance: 'Synthetic get_my_balance description.',
       get_holidays: 'Synthetic get_holidays description.',
       get_team_calendar: 'Synthetic get_team_calendar description.',
       submit_to_gate: 'Synthetic submit_to_gate description.',
+      hand_back: 'Synthetic hand_back description.',
     });
   });
 

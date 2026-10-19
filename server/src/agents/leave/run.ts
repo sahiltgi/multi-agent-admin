@@ -1,5 +1,5 @@
 // runLeaveAgent (spec leave-agent, rules 7, 9 to 14; D-1, D-7, D-11, D-12, D-16). Runs the shared
-// runtime with the four leave tools, then builds the result in code. The card's verdict and rule
+// runtime with the five leave tools, then builds the result in code. The card's verdict and rule
 // results are copied from the gate output; model text is used only after it passes its checks.
 import { AuditEvent } from '../../domain/schemas.js';
 import type { AuditSink } from '../audit.js';
@@ -7,6 +7,7 @@ import { ClarifyingQuestion } from '../orchestrator/schemas.js';
 import { createRuntime, type RunResult } from '../runtime.js';
 import { LEAVE_CONFIG } from './config.js';
 import {
+  type EscalationReason,
   LeaveAgentResult,
   LeaveAuditPayload,
   LeaveInput,
@@ -52,20 +53,32 @@ async function build(
   flagged: boolean,
   gateRuns: number,
 ): Promise<Built> {
-  const escalate = (
-    reason: 'run_not_completed' | 'multiple_submissions' | 'fallback_text_missing',
-  ) =>
+  const escalate = (reason: EscalationReason) =>
     ({
       result: { kind: 'escalated', requestId, reason, injectionSuspected: flagged },
       summarySource: null,
     }) as const;
 
   // Rule 12: any outcome other than completed escalates, even after a successful submission.
-  if (run.outcome !== 'completed') return escalate('run_not_completed');
+  // chat-endpoint rule 16: only an API timeout or error is model_unavailable (a retry on /chat).
+  if (run.outcome !== 'completed') {
+    const apiFailure =
+      run.outcome === 'timeout' || (run.outcome === 'error' && run.code === 'model_error');
+    return escalate(apiFailure ? 'model_unavailable' : 'run_not_completed');
+  }
   const submissions = run.toolCalls.filter((c) => c.tool === 'submit_to_gate');
   // Rule 9 / D-12: no shopping for a better verdict. is_error calls never reach toolCalls.
   // A gate evaluation whose tool call then failed (e.g. its gate_result write) still counts.
-  if (Math.max(submissions.length, gateRuns) > 1) return escalate('multiple_submissions');
+  const gateCalls = Math.max(submissions.length, gateRuns);
+  if (gateCalls > 1) return escalate('multiple_submissions');
+  // chat-endpoint rule 15: never a card plus a switch. Code sees the call, never model text.
+  if (run.toolCalls.some((c) => c.tool === 'hand_back')) {
+    if (gateCalls === 1) return escalate('hand_back_conflict');
+    return {
+      result: { kind: 'hand_back', requestId, injectionSuspected: flagged },
+      summarySource: null,
+    };
+  }
 
   const [submission] = submissions;
   if (submission === undefined) {

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -46,6 +46,14 @@ function runServer(policyPath?: string) {
   });
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
+
+describe('shutdown grace (chat-endpoint)', () => {
+  it('AT-31: the production shutdown grace passed to the server process is 160,000 ms', () => {
+    const src = readFileSync(join(REPO_ROOT, 'server', 'src', 'index.ts'), 'utf8');
+    expect(src).toMatch(/SHUTDOWN_GRACE_MS\s*=\s*160_?000\b/);
+    expect(src).toMatch(/graceMs:\s*SHUTDOWN_GRACE_MS/);
+  });
+});
 
 describe('server startup policy loading', () => {
   it(

@@ -31,6 +31,7 @@ describe('mongo adapter sources', () => {
       'MongoAuditStore',
       'MongoIdempotencyStore',
       'MongoLeaveDataPort',
+      'MongoConversationStore', // chat-endpoint amendment (mongo-persistence rule 1)
       'connectMongo',
     ]) {
       expect(all, name).toContain(name);

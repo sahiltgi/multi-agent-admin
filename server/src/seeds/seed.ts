@@ -24,7 +24,12 @@ export const SEED_COLLECTIONS = [
 export type SeedCollection = (typeof SEED_COLLECTIONS)[number];
 
 /** Collections that point at seeded requests; cleared so a reseed leaves no orphans (D-15). */
-export const SEED_CLEARED = ['approvalItems', 'messageOwners', 'idempotencyRecords'] as const;
+export const SEED_CLEARED = [
+  'approvalItems',
+  'messageOwners',
+  'idempotencyRecords',
+  'conversations', // chat-endpoint D-7: card snapshots would point at deleted requests
+] as const;
 export type SeedClearedCollection = (typeof SEED_CLEARED)[number];
 
 export interface SeedWriter {

@@ -219,7 +219,7 @@ function fakePrompts(prompt = 'LEAVE-PROMPT-FIXTURE') {
   return {
     load: vi.fn((agentId: string, version: string) =>
       Promise.resolve(
-        agentId === 'leave' && version === 'v1'
+        agentId === 'leave' && version === 'v2'
           ? { found: true as const, text: prompt }
           : { found: false as const },
       ),
@@ -280,6 +280,7 @@ function setup(script: Step[], o: SetupOpts = {}) {
       get_holidays: 'Synthetic fixture: list public holidays in a date range.',
       get_team_calendar: 'Synthetic fixture: list per-day counts of teammates on leave.',
       submit_to_gate: 'Synthetic fixture: submit the extracted leave request to the gate.',
+      hand_back: 'Synthetic fixture: hand the message back when it is not a leave request.',
     },
     texts,
   };
@@ -344,13 +345,19 @@ afterEach(() => {
 // ---------- Allowlist (rule 1) ----------
 
 describe('leave agent', () => {
-  it('AT-1: the leave config allowlists exactly the four tools', () => {
+  it('AT-1: the leave config allowlists exactly the five tools (chat-endpoint amendment: hand_back added, v2)', () => {
     const cfg = AgentConfig.parse(LEAVE_CONFIG);
     expect(cfg.agentId).toBe('leave');
-    expect(cfg.promptVersion).toBe('v1');
-    expect(cfg.allowlist).toHaveLength(4);
+    expect(cfg.promptVersion).toBe('v2');
+    expect(cfg.allowlist).toHaveLength(5);
     expect(new Set(cfg.allowlist)).toEqual(
-      new Set(['get_my_balance', 'get_holidays', 'get_team_calendar', 'submit_to_gate']),
+      new Set([
+        'get_my_balance',
+        'get_holidays',
+        'get_team_calendar',
+        'submit_to_gate',
+        'hand_back',
+      ]),
     );
     expect(new Set(LEAVE_TOOLS)).toEqual(new Set(cfg.allowlist));
     const { deps } = setup([]);
@@ -382,12 +389,14 @@ describe('leave agent', () => {
     for (const good of LEAVE_TOOLS) expect(forbidden.test(good), good).toBe(false);
   });
 
-  it('AT-3: the first request offers exactly the four leave tools, strict', async () => {
+  it('AT-3: the first request offers exactly the five leave tools, strict (chat-endpoint amendment)', async () => {
     const t = setup([done(QUESTION)], { extraTools: true });
     await t.run();
     const first = must(t.model.requests[0]);
     const tools = first.tools as Rec[];
-    expect(tools.map((x) => x.name).sort()).toEqual([...LEAVE_TOOLS].sort());
+    expect(tools.map((x) => x.name).sort()).toEqual(
+      ['get_holidays', 'get_my_balance', 'get_team_calendar', 'hand_back', 'submit_to_gate'].sort(),
+    );
     for (const tool of tools) {
       expect(tool.strict).toBe(true);
       expect(asRec(tool.input_schema).additionalProperties).toBe(false);
@@ -411,12 +420,15 @@ describe('leave agent', () => {
   it('AT-5: strict tool schemas, no identity keys, outputs reject extra keys', () => {
     const { deps } = setup([]);
     const tools = buildLeaveTools(deps);
-    expect(tools.map((x) => x.name).sort()).toEqual([...LEAVE_TOOLS].sort());
+    expect(tools.map((x) => x.name).sort()).toEqual(
+      ['get_holidays', 'get_my_balance', 'get_team_calendar', 'hand_back', 'submit_to_gate'].sort(),
+    );
     const identity = ['employeeId', 'actor', 'role', 'teamId', 'managerId'];
     const validOutput: Record<string, unknown> = {
       get_my_balance: { balances: [] },
       get_holidays: { holidays: [] },
       get_team_calendar: { days: [] },
+      hand_back: { handedBack: true },
       submit_to_gate: { request: { employeeId: 'emp-004' }, today: '2026-10-14', gate: G },
     };
     for (const tool of tools) {
@@ -818,7 +830,7 @@ describe('leave agent', () => {
     expect(card.summary).toBe(SUMMARY);
     expect(card.summarySource).toBe('model');
     expect(card.model).toBe(LEAVE_CONFIG.model);
-    expect(card.promptVersion).toBe('v1');
+    expect(card.promptVersion).toBe('v2');
   });
 
   it('AT-27: a model summary that states a decision cannot change the verdict', async () => {
@@ -898,7 +910,7 @@ describe('leave agent', () => {
 
   // ---------- Failures (rule 12) ----------
 
-  it('AT-31: any run that does not complete escalates with no card and no verdict', async () => {
+  it('AT-31: any run that does not complete escalates with no card and no verdict (timeout and model_error give model_unavailable, chat-endpoint amendment)', async () => {
     const verdicts = [
       'RETURN_TO_EMPLOYEE',
       'ESCALATE_TO_HR',
@@ -924,6 +936,11 @@ describe('leave agent', () => {
       t: setup([() => new Promise<unknown>(() => undefined)], { clock }),
       timeout: true,
     });
+    // chat-endpoint rule 16: an API failure (create rejects) is model_unavailable too.
+    scenarios.push({
+      name: 'model_error',
+      t: setup([() => Promise.reject(new Error('synthetic overloaded error'))]),
+    });
     for (const { name, t, timeout } of scenarios) {
       const pending = t.run();
       if (timeout === true) {
@@ -932,7 +949,9 @@ describe('leave agent', () => {
       }
       const result = asRec(await pending);
       expect(result.kind, name).toBe('escalated');
-      expect(result.reason, name).toBe('run_not_completed');
+      expect(result.reason, name).toBe(
+        name === 'timeout' || name === 'model_error' ? 'model_unavailable' : 'run_not_completed',
+      );
       expect(result, name).not.toHaveProperty('card');
       const serialised = JSON.stringify(result);
       for (const v of verdicts) expect(serialised, name).not.toContain(v);
@@ -1027,8 +1046,8 @@ describe('leave agent', () => {
     const t = setup(SUBMIT_THEN_DONE(VALID));
     const result = asRec(await t.run());
     expect(String(must(t.model.requests[0]).system)).toContain('LEAVE-PROMPT-FIXTURE');
-    expect(asRec(result.card).promptVersion).toBe('v1');
-    for (const p of payloads(t.sink)) expect(p.promptVersion).toBe('v1');
+    expect(asRec(result.card).promptVersion).toBe('v2');
+    for (const p of payloads(t.sink)) expect(p.promptVersion).toBe('v2');
     const sources = leaveSources();
     expect(sources.length).toBeGreaterThan(0);
     for (const { file, src } of sources) {
@@ -1036,12 +1055,20 @@ describe('leave agent', () => {
     }
   });
 
-  it('AT-37: prompts/leave/v1.md exists, names the tools and uses only synthetic emails', () => {
-    const path = fileURLToPath(new URL('../../../../prompts/leave/v1.md', import.meta.url));
+  it('AT-37: prompts/leave/v2.md exists, names the five tools and uses only synthetic emails (chat-endpoint amendment)', () => {
+    const path = fileURLToPath(new URL('../../../../prompts/leave/v2.md', import.meta.url));
     expect(existsSync(path)).toBe(true);
     const body = readFileSync(path, 'utf8');
     expect(body.trim().length).toBeGreaterThan(0);
-    for (const tool of LEAVE_TOOLS) expect(body).toContain(tool);
+    for (const tool of [
+      'get_my_balance',
+      'get_holidays',
+      'get_team_calendar',
+      'submit_to_gate',
+      'hand_back',
+    ]) {
+      expect(body).toContain(tool);
+    }
     for (const m of body.matchAll(/[\w.+-]+@([\w-]+(?:\.[\w-]+)+)/g)) {
       expect(/\.(example|test)$/.test(m[1] ?? '')).toBe(true);
     }

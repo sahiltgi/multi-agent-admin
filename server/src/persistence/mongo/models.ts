@@ -1,4 +1,4 @@
-// Storage-only records for the two non-entity collections (spec mongo-persistence, rules 5 and 6;
+// Storage-only records for the three non-entity collections (spec mongo-persistence, rules 5 and 6;
 // D-10, D-16). They live here, outside ENTITY_SCHEMAS and MODELS, which keep exactly 8 keys.
 import { Schema, model } from 'mongoose';
 import { z } from 'zod';
@@ -52,3 +52,33 @@ export const IdempotencyRecordModel = model<IdempotencyRecord>(
   'IdempotencyRecord',
   idempotencyRecordSchema,
 );
+
+// ---- Conversation (spec chat-endpoint rule 7; mongo-persistence D-10 amendment) ----
+// The Zod schema lives in chat/schemas.ts and is applied on every write and read; nested turns and
+// the draft are stored as given, so Mongoose never coerces them.
+interface StoredConversation {
+  id: string;
+  userId: string;
+  turns: unknown[];
+  activeAgent: string | null;
+  draft: unknown;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const conversationSchema = new Schema<StoredConversation>(
+  {
+    id: { type: String, required: true, unique: true },
+    userId: { type: String, required: true },
+    turns: { type: [Schema.Types.Mixed], required: true },
+    activeAgent: { type: String, default: null },
+    draft: { type: Schema.Types.Mixed, default: null },
+    version: { type: Number, required: true },
+    createdAt: { type: String, required: true },
+    updatedAt: { type: String, required: true },
+  },
+  { ...TOP_LEVEL, collection: 'conversations', minimize: false },
+);
+conversationSchema.index({ id: 1, userId: 1 });
+export const ConversationModel = model<StoredConversation>('Conversation', conversationSchema);

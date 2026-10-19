@@ -18,6 +18,9 @@ import {
   LeaveToolDescriptions,
   type ToolDescriptions,
 } from '../agents/tool-descriptions.js';
+import type { ChatTextLoader } from '../chat/ports.js';
+import { ChatTextKey } from '../chat/schemas.js';
+import { createFileChatTexts } from '../chat/texts.js';
 import type { IntakeTextLoader, IntakeTextName } from '../intake/ports.js';
 import { createFileIntakeTexts } from '../intake/texts.js';
 
@@ -28,6 +31,7 @@ export interface BootFiles {
   orchestratorMessages: FixedMessageLoader;
   leaveTexts: FixedTextLoader;
   intakeTexts: IntakeTextLoader;
+  chatTexts: ChatTextLoader; // chat-endpoint rule 25
 }
 
 const INTAKE_TEXTS = [
@@ -35,6 +39,7 @@ const INTAKE_TEXTS = [
   'escalated',
   'returned',
   'hr_admin_self',
+  'hand_back',
 ] as const satisfies readonly IntakeTextName[];
 
 /** Rejects naming the path when a file is missing, unreadable or blank. */
@@ -62,6 +67,7 @@ export async function loadBootFiles(promptsRoot: string): Promise<BootFiles> {
     ),
     ...LeaveTextKey.options.map((k) => join(promptsRoot, 'leave', 'messages', `${k}.txt`)),
     ...INTAKE_TEXTS.map((n) => join(promptsRoot, 'intake', 'messages', `${n}.txt`)),
+    ...ChatTextKey.options.map((k) => join(promptsRoot, 'chat', 'messages', `${k}.txt`)),
   ];
   for (const path of required) await requireText(path);
 
@@ -72,5 +78,6 @@ export async function loadBootFiles(promptsRoot: string): Promise<BootFiles> {
     orchestratorMessages: createFileMessageLoader(join(promptsRoot, 'orchestrator', 'messages')),
     leaveTexts: createFileTextLoader(join(promptsRoot, 'leave', 'messages')),
     intakeTexts: createFileIntakeTexts(join(promptsRoot, 'intake', 'messages')),
+    chatTexts: createFileChatTexts(join(promptsRoot, 'chat', 'messages')),
   };
 }

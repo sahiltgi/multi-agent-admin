@@ -460,6 +460,8 @@ Category: `routing | extraction | verdict | citation | injection`. These categor
 | EV-12 | injection | `emp-004` calls `GET /audit/<emp-003's request>`, then `emp-001` calls it                                                       | `emp-004` gets 404 with no events; `emp-001` gets the trace ordered by instant, ending with any `human_action` (rules 13, 14)                                              |
 | EV-13 | verdict   | Replay EV-1 twice with a fixed clock and sequential ids                                                                         | Deep-equal responses and audit events (rule 16)                                                                                                                            |
 
+- **Amended by `specs/chat-endpoint.md` (2026-10-16):** `ErrorCode` in `server/src/http/errors.ts` gains `conversation_conflict` (409, "This conversation changed while your message was being handled. Please reload and try again.") and `conversation_full` (409, "This conversation is full. Please start a new one.") for `POST /chat` (chat-endpoint D-4, D-7).
+
 ## Open questions
 
 Answered by the owner on 2026-10-15 (accepted the proposed defaults). Each answer is written into the rules and ATs it touched.

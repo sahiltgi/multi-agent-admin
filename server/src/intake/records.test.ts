@@ -43,6 +43,7 @@ const TEXTS: Record<IntakeTextName, string> = {
   escalated: 'ESCALATED-FIXTURE',
   returned: 'RETURNED-FIXTURE',
   hr_admin_self: 'HR-ADMIN-SELF-FIXTURE',
+  hand_back: 'What do you need help with today?', // chat-endpoint D-1
 };
 
 /** C(verdict): a valid RecommendationCard for requestId and employeeId. */
@@ -596,6 +597,8 @@ describe('request-intake: escalation path', () => {
       'run_not_completed',
       'multiple_submissions',
       'fallback_text_missing',
+      'model_unavailable', // chat-endpoint amendment
+      'hand_back_conflict', // chat-endpoint amendment
     ] as const) {
       const w = makeWorld({
         leave: (input) => ({

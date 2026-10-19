@@ -2,6 +2,7 @@
 // D-3, D-4, D-8). Errors may carry the URI; the caller scrubs them before printing (rule 14).
 import mongoose, { type Model } from 'mongoose';
 import type { AuditSink } from '../../agents/audit.js';
+import type { ConversationStore } from '../../chat/ports.js';
 import type { LeaveDataPort } from '../../agents/leave/port.js';
 import type {
   ApprovalStore,
@@ -17,11 +18,12 @@ import type {
 import { MODELS } from '../../models/index.js';
 import { MongoApprovalStore } from './approvals.js';
 import { MongoAuditStore } from './audit.js';
+import { MongoConversationStore } from './conversations.js';
 import { MongoEmployeeDirectory } from './directory.js';
 import { MongoIdempotencyStore } from './idempotency.js';
 import { MongoLeaveDataPort } from './leave-data.js';
 import { MongoLeaveRequestStore } from './leave-requests.js';
-import { IdempotencyRecordModel, MessageOwnerModel } from './models.js';
+import { ConversationModel, IdempotencyRecordModel, MessageOwnerModel } from './models.js';
 
 export interface ServerStores {
   directory: EmployeeDirectory;
@@ -30,6 +32,7 @@ export interface ServerStores {
   audit: AuditSink & AuditReader;
   idempotency: IdempotencyStore;
   leaveData: LeaveDataPort;
+  conversations: ConversationStore; // chat-endpoint rule 25
 }
 
 export interface MongoHandle {
@@ -51,6 +54,7 @@ const ALL_MODELS: readonly Model<never>[] = [
   ...Object.values(MODELS),
   MessageOwnerModel,
   IdempotencyRecordModel,
+  ConversationModel,
 ] as unknown as readonly Model<never>[];
 
 // The unique indexes rules 3–7 rely on. Startup refuses to serve without them (D-4).
@@ -61,6 +65,7 @@ const REQUIRED_UNIQUE: readonly { model: Model<never>; key: string }[] = [
   { model: MODELS.Employee as unknown as Model<never>, key: 'id' },
   { model: MessageOwnerModel as unknown as Model<never>, key: 'requestId' },
   { model: IdempotencyRecordModel as unknown as Model<never>, key: 'employeeId,key' },
+  { model: ConversationModel as unknown as Model<never>, key: 'id' },
 ];
 
 async function assertUniqueIndexes(): Promise<void> {
@@ -82,6 +87,7 @@ function stores(): ServerStores {
     audit: new MongoAuditStore(),
     idempotency: new MongoIdempotencyStore(),
     leaveData: new MongoLeaveDataPort(),
+    conversations: new MongoConversationStore(),
   };
 }
 
