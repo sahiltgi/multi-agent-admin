@@ -28,6 +28,7 @@ const TEXTS: Record<IntakeTextName, string> = {
   escalated: 'ESCALATED-FIXTURE',
   returned: 'RETURNED-FIXTURE',
   hr_admin_self: 'HR-ADMIN-SELF-FIXTURE',
+  hand_back: 'What do you need help with today?', // chat-endpoint D-1
 };
 
 function card(verdict: RecommendationCard['verdict'], employeeId = 'emp-004'): RecommendationCard {

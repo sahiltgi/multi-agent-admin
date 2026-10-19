@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { SeedSummary } from '../domain/schemas.js';
 import { fixtures } from './fixtures.js';
-import { runSeed, SEED_COLLECTIONS, type SeedCollection, type SeedWriter } from './seed.js';
+import {
+  runSeed,
+  SEED_CLEARED,
+  SEED_COLLECTIONS,
+  type SeedCollection,
+  type SeedWriter,
+} from './seed.js';
 
 const GOOD_URI = 'mongodb://localhost:27017/hr';
 const EXPECTED_COUNTS = {
@@ -25,7 +31,12 @@ interface Harness {
 }
 
 function harness(
-  opts: { connectError?: Error; failReplaceAt?: number; failClear?: Error } = {},
+  opts: {
+    connectError?: Error;
+    failReplaceAt?: number;
+    failClear?: Error;
+    failClearOn?: string;
+  } = {},
 ): Harness {
   const calls: string[] = [];
   const replaced: SeedCollection[] = [];
@@ -34,7 +45,9 @@ function harness(
   const writer: SeedWriter = {
     clear: (collection) => {
       calls.push(`clear:${collection}`);
-      if (opts.failClear) return Promise.reject(opts.failClear);
+      if (opts.failClear && (opts.failClearOn === undefined || opts.failClearOn === collection)) {
+        return Promise.reject(opts.failClear);
+      }
       return Promise.resolve();
     },
     connect: () => {
@@ -134,13 +147,14 @@ describe('runSeed', () => {
     expect(h.calls).toContain('disconnect');
   });
 
-  it('AT-20: (mongo-persistence D-15) clears exactly the three collections after connect and before any replaceAll', async () => {
+  it('AT-20: (mongo-persistence D-15, amended by chat-endpoint) clears exactly the four collections after connect and before any replaceAll', async () => {
     const h = harness();
     const code = await runSeed(h.deps({ MONGODB_URI: GOOD_URI }));
     expect(code).toBe(0);
     const clears = h.calls.filter((c) => c.startsWith('clear:'));
     expect([...clears].sort()).toEqual([
       'clear:approvalItems',
+      'clear:conversations',
       'clear:idempotencyRecords',
       'clear:messageOwners',
     ]);
@@ -165,5 +179,40 @@ describe('runSeed', () => {
     expect(h.stdout.join('\n')).not.toContain('pass-clr-9');
     expect(h.replaced).toEqual([]);
     expect(h.calls).toContain('disconnect');
+  });
+});
+
+describe('chat-endpoint seeding', () => {
+  it('AT-33: SEED_CLEARED contains conversations', () => {
+    expect([...SEED_CLEARED]).toContain('conversations');
+  });
+
+  it('AT-33: clear is called for exactly the four collections, each before any replaceAll, never for audit', async () => {
+    const h = harness();
+    expect(await runSeed(h.deps({ MONGODB_URI: GOOD_URI }))).toBe(0);
+    const clears = h.calls.filter((c) => c.startsWith('clear:'));
+    expect([...clears].sort()).toEqual([
+      'clear:approvalItems',
+      'clear:conversations',
+      'clear:idempotencyRecords',
+      'clear:messageOwners',
+    ]);
+    expect(clears.some((c) => c.toLowerCase().includes('audit'))).toBe(false);
+    expect(Math.max(...clears.map((c) => h.calls.indexOf(c)))).toBeLessThan(
+      h.calls.indexOf('replaceAll'),
+    );
+  });
+
+  it('AT-33: a rejecting clear of conversations exits 1 and leaks no URI or password', async () => {
+    const uri = 'mongodb://user:pass-conv-7@localhost:27017/hr';
+    const h = harness({
+      failClear: new Error(`cannot clear on ${uri}`),
+      failClearOn: 'conversations',
+    });
+    expect(await runSeed(h.deps({ MONGODB_URI: uri }))).toBe(1);
+    expect(h.calls).toContain('clear:conversations');
+    const all = h.stderr.join('\n') + h.stdout.join('\n');
+    expect(all).not.toContain('pass-conv-7');
+    expect(all).not.toContain(uri);
   });
 });

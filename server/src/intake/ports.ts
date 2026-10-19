@@ -27,7 +27,8 @@ export interface ApprovalItemWriter {
   remove(id: string): Promise<void>;
 }
 
-export type IntakeTextName = 'not_available' | 'escalated' | 'returned' | 'hr_admin_self';
+export type IntakeTextName =
+  'not_available' | 'escalated' | 'returned' | 'hr_admin_self' | 'hand_back'; // chat-endpoint D-1
 
 export interface IntakeTextLoader {
   /** The fixed text, or null when it is missing or blank (fail closed, D-14). */

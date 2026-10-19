@@ -53,6 +53,7 @@ export const FallbackReason = z.enum([
   'run_not_completed',
   'no_route_call',
   'multiple_route_calls',
+  'model_unavailable', // chat-endpoint rule 16: timeout or model_error only
 ]);
 export type FallbackReason = z.infer<typeof FallbackReason>;
 

@@ -9,8 +9,9 @@ import { loadBootFiles } from './server/boot.js';
 import { listenHttp } from './server/http.js';
 import { runServerProcess } from './server/start.js';
 
-// D-8: one 90-second Leave Agent run plus margin.
-const SHUTDOWN_GRACE_MS = 95_000;
+// mongo-persistence D-8 as amended by chat-endpoint D-9: the worst chat turn (Leave 60 s,
+// orchestrator 30 s, Leave 60 s) plus margin.
+const SHUTDOWN_GRACE_MS = 160_000;
 
 process.exitCode = await runServerProcess(
   {

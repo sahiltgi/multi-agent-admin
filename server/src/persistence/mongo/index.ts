@@ -3,11 +3,13 @@
 export { MongoApprovalStore } from './approvals.js';
 export { MongoAuditStore } from './audit.js';
 export { connectMongo, type MongoHandle, type ServerStores } from './connect.js';
+export { MongoConversationStore } from './conversations.js';
 export { MongoEmployeeDirectory } from './directory.js';
 export { MongoIdempotencyStore } from './idempotency.js';
 export { MongoLeaveDataPort } from './leave-data.js';
 export { MongoLeaveRequestStore } from './leave-requests.js';
 export {
+  ConversationModel,
   IdempotencyRecord,
   IdempotencyRecordModel,
   MessageOwner,

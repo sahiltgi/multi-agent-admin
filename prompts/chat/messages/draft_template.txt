@@ -1,0 +1,8 @@
+Their latest message:
+{latest}
+
+Earlier messages from the employee in this leave request:
+{earlier}
+
+Question you asked them:
+{question}

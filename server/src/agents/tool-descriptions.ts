@@ -20,6 +20,7 @@ export const LeaveToolDescriptions = z
     get_holidays: Description,
     get_team_calendar: Description,
     submit_to_gate: Description,
+    hand_back: Description, // chat-endpoint rule 15
   })
   .strict();
 export type LeaveToolDescriptions = z.infer<typeof LeaveToolDescriptions>;

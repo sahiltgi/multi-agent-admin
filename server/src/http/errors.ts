@@ -13,6 +13,8 @@ export const ErrorCode = z.enum([
   'gate_result_changed',
   'gate_result_missing',
   'idempotency_conflict', // request-intake D-11
+  'conversation_conflict', // chat-endpoint D-4
+  'conversation_full', // chat-endpoint D-7
   'internal_error',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
@@ -49,6 +51,12 @@ const ERRORS: Record<ErrorCode, { status: number; message: string }> = {
     status: 409,
     message: 'This idempotency key was already used for a different or unfinished message.',
   },
+  conversation_conflict: {
+    status: 409,
+    message:
+      'This conversation changed while your message was being handled. Please reload and try again.',
+  },
+  conversation_full: { status: 409, message: 'This conversation is full. Please start a new one.' },
   internal_error: { status: 500, message: 'Something went wrong.' },
 };
 

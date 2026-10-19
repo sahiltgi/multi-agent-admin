@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { IntakeTextName } from './ports.js';
+import { ClarifyingQuestion } from '../agents/orchestrator/schemas.js';
 import { createFileIntakeTexts } from './texts.js';
 
 const realRoot = fileURLToPath(new URL('../../../prompts/intake/messages', import.meta.url));
@@ -45,5 +46,11 @@ describe('intake fixed texts (D-14)', () => {
       expect(text, name).not.toBeNull();
       expect(text, name).not.toMatch(/approv|reject|denied|granted|verdict|ROUTE_TO|ESCALATE_TO/i);
     }
+  });
+
+  it('chat-endpoint D-10: the shipped hand_back text passes ClarifyingQuestion after the loader trim', async () => {
+    const text = await createFileIntakeTexts(realRoot).load('hand_back');
+    expect(text).not.toBeNull();
+    expect(ClarifyingQuestion.safeParse(text).success).toBe(true);
   });
 });

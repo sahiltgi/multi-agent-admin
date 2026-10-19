@@ -1,7 +1,11 @@
 // Entry point for `npm run seed`. `.env` is loaded by Node's --env-file-if-exists flag.
 import mongoose from 'mongoose';
 import { MODELS } from '../models/index.js';
-import { IdempotencyRecordModel, MessageOwnerModel } from '../persistence/mongo/models.js';
+import {
+  ConversationModel,
+  IdempotencyRecordModel,
+  MessageOwnerModel,
+} from '../persistence/mongo/models.js';
 import { fixtures } from './fixtures.js';
 import {
   runSeed,
@@ -23,6 +27,7 @@ const CLEARED_MODEL = {
   approvalItems: MODELS.ApprovalItem,
   messageOwners: MessageOwnerModel,
   idempotencyRecords: IdempotencyRecordModel,
+  conversations: ConversationModel,
 } as const satisfies Record<SeedClearedCollection, unknown>;
 
 /** The model methods the seed needs. Docs were Zod-parsed by runSeed before they get here. */

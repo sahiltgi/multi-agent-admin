@@ -422,6 +422,7 @@ Answers to the former open questions, approved by the owner on 2026-10-14. D-n a
   - **Input size:** `userText` ≤ 4,000 characters, at most 5 documents, each `text` ≤ 20,000 characters. Over-limit input fails `RunInput` with no model call and no audit event (AT-2). The API layer maps that to a 400.
   - **Readable free text in the audit:** kept. HR needs the redacted request text and tool I/O for the audit trail. Only emails, phone numbers and ID-like numbers are masked (D-7), so names and leave reasons stay readable. Handoff to the MongoDB audit-sink spec: audit reads are `hr_admin`-only, and that spec sets the retention period. (Amended by `specs/mongo-persistence.md` D-1 and D-2 on 2026-10-16: audit events are kept forever for the MVP, and trace reads follow approval-queue rule 14 as amended by request-intake D-9, not `hr_admin`-only.)
   - **Evals:** the EV cases run once an eval runner exists (`specs/eval-runner.md`, to be written next).
+- **Amended by `specs/chat-endpoint.md` (2026-10-16):** the non-goal "Conversation memory across HTTP requests" and D-16 still hold for the runtime: each run starts from one `RunInput` and never resumes history. Cross-request memory exists only in the chat layer, which renders a fresh `userText` per turn from a file template (chat-endpoint rule 13); `MAX_USER_TEXT_CHARS` applies to that rendered text. No runtime code change and no per-turn deadline (chat-endpoint D-9).
 
 ## Open questions
 

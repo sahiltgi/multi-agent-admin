@@ -459,11 +459,12 @@ auditContract('mongo', () => {
 });
 
 describe('mongo handle and adapters', () => {
-  it('AT-1: connectMongo exposes the six stores', () => {
+  it('AT-1: connectMongo exposes the seven stores (conversations added by chat-endpoint)', () => {
     expect(handle).toBeDefined();
     expect(Object.keys(handle?.stores ?? {}).sort()).toEqual([
       'approvals',
       'audit',
+      'conversations',
       'directory',
       'idempotency',
       'leaveData',
@@ -688,5 +689,90 @@ describe('mongo handle and adapters', () => {
     // Compared here and not only in afterAll, so a change shows up as a normal failure.
     expect(testUri).not.toBe('');
     expect(await devCounts()).toEqual(devCountsBefore);
+  });
+});
+
+// ---- chat-endpoint AT-8: the ConversationStore contract, in-memory fake vs Mongo ----
+// (same cases as src/chat/in-memory.test.ts; dynamic imports so this file loads before the code lands)
+interface ConvDoc {
+  id: string;
+  userId: string;
+  version: number;
+  turns: unknown[];
+}
+interface ConvPort {
+  get(id: string, userId: string): Promise<ConvDoc | null>;
+  insert(c: ConvDoc): Promise<boolean>;
+  saveIfVersion(c: ConvDoc, v: number): Promise<boolean>;
+  remove(id: string, userId: string): Promise<void>;
+}
+const convDoc = (): ConvDoc =>
+  ({
+    id: 'c-1',
+    userId: 'emp-004',
+    turns: [{ requestId: 't-1', at: NOW, userText: 'hi', reply: 'ok', status: 'reply' }],
+    activeAgent: null,
+    draft: null,
+    version: 0,
+    createdAt: NOW,
+    updatedAt: NOW,
+  }) as ConvDoc;
+const convNext = (c: ConvDoc, note: string): ConvDoc =>
+  ({
+    ...c,
+    version: c.version + 1,
+    updatedAt: NOW,
+    turns: [...c.turns, { requestId: note, at: NOW, userText: note, reply: 'ok', status: 'reply' }],
+  }) as ConvDoc;
+
+function conversationContract(label: string, make: () => Promise<ConvPort>): void {
+  describe(`AT-8: ${label} ConversationStore contract`, () => {
+    it('AT-8: get matches id and userId exactly; a second insert returns false', async () => {
+      const s = await make();
+      const c = convDoc();
+      expect(await s.insert(c)).toBe(true);
+      expect(await s.get('c-1', 'emp-004')).toEqual(c);
+      expect(await s.get('c-1', 'emp-005')).toBeNull();
+      expect(await s.get('{"$ne":null}', 'emp-004')).toBeNull();
+      expect(await s.insert({ ...c, userId: 'emp-005', version: 9 })).toBe(false);
+      expect(await s.get('c-1', 'emp-004')).toEqual(c);
+    });
+    it('AT-8: saveIfVersion succeeds once; of 10 concurrent calls exactly one wins', async () => {
+      const s = await make();
+      const c = convDoc();
+      await s.insert(c);
+      expect(await s.saveIfVersion(convNext(c, 'a'), 0)).toBe(true);
+      expect(await s.saveIfVersion(convNext(c, 'b'), 0)).toBe(false);
+      const s2 = await make();
+      await s2.insert(c);
+      const results = await Promise.all(
+        Array.from({ length: 10 }, (_, i) => s2.saveIfVersion(convNext(c, `n${String(i)}`), 0)),
+      );
+      expect(results.filter(Boolean)).toHaveLength(1);
+    });
+    it('AT-8: remove deletes only the document matching both id and userId', async () => {
+      const s = await make();
+      await s.insert(convDoc());
+      await s.remove('c-1', 'emp-005');
+      expect(await s.get('c-1', 'emp-004')).not.toBeNull();
+      await s.remove('c-1', 'emp-004');
+      expect(await s.get('c-1', 'emp-004')).toBeNull();
+    });
+  });
+}
+
+conversationContract('in-memory', async () => {
+  const { InMemoryConversationStore } = await import('../../chat/in-memory.js');
+  return new InMemoryConversationStore();
+});
+conversationContract('mongo', async () => {
+  await mongoose.connection.collection('conversations').deleteMany({});
+  const { MongoConversationStore } = await import('./conversations.js');
+  return new MongoConversationStore();
+});
+
+describe('chat-endpoint mongo wiring', () => {
+  it('AT-8: connectMongo exposes the conversations store (seven stores)', () => {
+    expect(Object.keys(handle?.stores ?? {})).toContain('conversations');
   });
 });

@@ -6,8 +6,8 @@ import { LEAVE_TOOLS } from './schemas.js';
 export const LEAVE_CONFIG: AgentConfig = {
   agentId: 'leave',
   model: 'claude-sonnet-5-5', // mid-tier for agents (brief §7, D-18)
-  promptVersion: 'v1',
-  allowlist: [...LEAVE_TOOLS], // exactly the four leave tools; no approve tool exists (rule 1)
+  promptVersion: 'v2', // chat-endpoint D-1: hand_back and the draft format; one config everywhere
+  allowlist: [...LEAVE_TOOLS], // exactly the five leave tools; no approve tool exists (rule 1)
   maxTurns: 8, // three lookups, one submission, a retry after an is_error, and the final text
   timeoutMs: 60000,
   maxTokens: 1024,

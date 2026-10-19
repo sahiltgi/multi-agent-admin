@@ -3,6 +3,7 @@
 // an approval or a decision field: verdicts are copied from the gate only (HARD RULE 1).
 import { z } from 'zod';
 import { MAX_USER_TEXT_CHARS } from '../agents/schemas.js';
+import { EscalationReason } from '../agents/leave/schemas.js';
 import { ClarifyingQuestion, RouteLabel } from '../agents/orchestrator/schemas.js';
 import {
   ApprovalStatus,
@@ -96,6 +97,19 @@ export const MessageResponse = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('escalated'), requestId: Id, text: z.string().min(1) }).strict(),
 ]);
 export type MessageResponse = z.infer<typeof MessageResponse>;
+
+// ---- dispatcher escalation codes (chat-endpoint D-10): closed, so no free text reaches an audit ----
+export const DispatchEscalation = z.enum([
+  'invalid_agent_output',
+  'request_id_mismatch',
+  'text_missing',
+  'card_mismatch',
+  'card_invalid',
+  'hand_back_fresh',
+  'fixed_message_missing', // the OrchestratorFailure code that takes the escalation path
+  ...EscalationReason.options,
+]);
+export type DispatchEscalation = z.infer<typeof DispatchEscalation>;
 
 // ---- intake audit payload (rule 15, D-4) ----
 export const INTAKE_OUTCOMES = [
