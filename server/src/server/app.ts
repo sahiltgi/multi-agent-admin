@@ -4,6 +4,7 @@ import type { Express } from 'express';
 import { runLeaveAgent, type LeaveAgentDeps } from '../agents/leave/run.js';
 import { buildLeaveTools } from '../agents/leave/tools.js';
 import { classifyMessage } from '../agents/orchestrator/classify.js';
+import { runPolicyQa } from '../agents/policy_qa/run.js';
 import { createProductionRegistry } from '../agents/registry.js';
 import type { Clock, RuntimeDeps, Scheduler } from '../agents/runtime.js';
 import type { ModelClient } from '../agents/schemas.js';
@@ -29,7 +30,7 @@ export interface ServerParts {
   scheduler: Scheduler;
   idGen: () => string;
   /** Tests only: replaces the classifyMessage and runLeaveAgent bindings. */
-  agents?: Pick<IntakeDeps, 'classify' | 'runLeave'>;
+  agents?: Pick<IntakeDeps, 'classify' | 'runLeave'> & Partial<Pick<IntakeDeps, 'runPolicyQa'>>;
 }
 
 /** UTC calendar date of the caller's clock (leave-agent D-13). */
@@ -84,6 +85,24 @@ export function buildApp(parts: ServerParts): Express {
     runLeave: parts.agents?.runLeave ?? ((input) => runLeaveAgent(input, leaveDeps)),
     texts: boot.intakeTexts,
     idempotency: stores.idempotency,
+    // spec policy-qa, rules 19, 26: one call with the boot-time handbook, policy and prompt.
+    runPolicyQa:
+      parts.agents?.runPolicyQa ??
+      ((input) =>
+        runPolicyQa(input, {
+          model: parts.model,
+          prompts: boot.prompts,
+          audit: stores.audit,
+          clock,
+          scheduler: parts.scheduler,
+          idGen,
+          detectInjection: detectInjectionHeuristic,
+          handbookBody: boot.handbook.body,
+          handbookHash: boot.handbook.hash,
+          policy: boot.qaPolicy,
+        })),
+    policyQuestions: stores.policyQuestions,
+    qaTexts: boot.qaTexts,
   };
   return createApp(approvalDeps, [
     ...createIntakeRoutes(intakeDeps),

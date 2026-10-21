@@ -47,6 +47,7 @@ interface TurnResult {
   draftAfter: LeaveDraft | null; // the task state the conversation keeps
   records: RecordParts;
   submit?: Extract<Outcome, { kind: 'submit' }>;
+  policyEscalation?: Extract<Outcome, { kind: 'policy_escalate' }>; // spec policy-qa, rule 22
 }
 
 const internalError = (): HttpError => new HttpError('internal_error');
@@ -336,6 +337,28 @@ export function createChatRoutes(deps: ChatDeps): RouteDefinition[] {
               records: outcome.gate,
             };
             break;
+          case 'policy_answer':
+            // spec policy-qa, rule 20: the answer and section ids, copied from the gate output.
+            result = {
+              status: 'answered',
+              reply: outcome.text,
+              card: { kind: 'policy_answer', sectionIds: outcome.sectionIds },
+              escalation: null,
+              draftAfter: null,
+              records: outcome.gate,
+            };
+            break;
+          case 'policy_escalate':
+            // spec policy-qa, rule 21: only the fixed text; never the draft answer.
+            result = {
+              status: 'escalated_to_hr',
+              reply: outcome.text,
+              escalation: outcome.escalation,
+              draftAfter: null,
+              records: outcome.records,
+              policyEscalation: outcome,
+            };
+            break;
           case 'submit':
             result = {
               status: 'leave_submitted',
@@ -415,6 +438,14 @@ export function createChatRoutes(deps: ChatDeps): RouteDefinition[] {
           .writeRecords(result.submit.leave, result.submit.item)
           .catch(() => ({ ok: false as const, failed: 'request' as const }));
         if (!written.ok) return fail('store_error'); // a failed item already removed the request
+        removeRecords = written.undo;
+      }
+      if (result.policyEscalation !== undefined) {
+        // spec policy-qa, rule 22: PolicyQuestion, then item, then the conversation and event.
+        const written = await dispatcher
+          .writePolicyEscalation(result.policyEscalation.question, result.policyEscalation.item)
+          .catch(() => ({ ok: false as const, failed: 'request' as const }));
+        if (!written.ok) return fail('store_error'); // a failed item already removed the question
         removeRecords = written.undo;
       }
       let saved: boolean;

@@ -14,7 +14,11 @@ import {
   InMemoryEmployeeDirectory,
   InMemoryAuditReader,
 } from '../http/approvals/in-memory.js';
-import { InMemoryIdempotencyStore, InMemoryLeaveRequestStore } from '../intake/in-memory.js';
+import {
+  InMemoryIdempotencyStore,
+  InMemoryLeaveRequestStore,
+  InMemoryPolicyQuestionStore,
+} from '../intake/in-memory.js';
 import { loadLeavePolicy } from '../policies/load.js';
 import { fixtures } from '../seeds/fixtures.js';
 import { buildApp, type ServerParts, type ServerStores } from './app.js';
@@ -113,6 +117,7 @@ function makeWorld(
       getTeamDayCounts: () => Promise.resolve([]),
       getTeamSize: () => Promise.resolve(1),
     },
+    policyQuestions: new InMemoryPolicyQuestionStore(), // policy-qa amendment
   };
   const create = vi.fn<ModelClient['create']>();
   if (opts.modelError !== undefined) create.mockRejectedValue(opts.modelError);

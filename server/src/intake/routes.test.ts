@@ -107,6 +107,48 @@ function mkLeave(id: string, employeeId: string): LeaveRequest {
   };
 }
 
+// ---- policy-qa test doubles (plain objects: the real agent is exercised in chat/routes.test.ts) ----
+function autoAnswerResult(requestId: string) {
+  return {
+    kind: 'gated',
+    requestId,
+    gate: {
+      verdict: 'AUTO_ANSWER',
+      ruleResults: ['citations_present', 'citations_verbatim', 'topic_not_sensitive'].map(
+        (ruleId) => ({
+          ruleId,
+          passed: true,
+          expected: 'e',
+          actual: 'a',
+          message: 'm',
+        }),
+      ),
+      reason: 'All checks passed.',
+      policyVersion: 'v1',
+      policyHash: 'a'.repeat(64),
+      sectionIds: ['HB-1.2'],
+    },
+    answerText: 'You get 10 sick days per year.',
+    provenance: { policyVersion: 'v1', policyHash: 'a'.repeat(64), handbookHash: 'b'.repeat(64) },
+    injectionSuspected: false,
+  } as unknown as Awaited<ReturnType<IntakeDeps['runPolicyQa']>>;
+}
+function stubQuestions(): IntakeDeps['policyQuestions'] {
+  const m = new Map<string, unknown>();
+  return {
+    insert: (q) => {
+      if (m.has(q.id)) return Promise.resolve(false);
+      m.set(q.id, q);
+      return Promise.resolve(true);
+    },
+    get: (id) => Promise.resolve((m.get(id) ?? null) as never),
+    remove: (id) => {
+      m.delete(id);
+      return Promise.resolve();
+    },
+  };
+}
+
 // ---- World ----
 interface WorldOptions {
   leaves?: LeaveRequest[];
@@ -122,6 +164,9 @@ function makeWorld(opts: WorldOptions = {}) {
   const idGen = () => `lr-${String(++state.counter).padStart(3, '0')}`;
   const classify = vi.fn<IntakeDeps['classify']>();
   const runLeave = vi.fn<IntakeDeps['runLeave']>();
+  const runPolicyQa = vi.fn<IntakeDeps['runPolicyQa']>(() =>
+    Promise.resolve(autoAnswerResult('lr-001')),
+  );
   const approvalDeps: ApprovalApiDeps = {
     directory,
     approvals,
@@ -150,8 +195,20 @@ function makeWorld(opts: WorldOptions = {}) {
       },
     ),
     idempotency: new InMemoryIdempotencyStore(),
+    runPolicyQa,
+    policyQuestions: stubQuestions(),
+    qaTexts: { load: () => Promise.resolve('QA-ESCALATED-FIXTURE') },
   };
-  return { approvalDeps, intakeDeps, sink, leaveStore, approvals, classify, runLeave };
+  return {
+    approvalDeps,
+    intakeDeps,
+    sink,
+    leaveStore,
+    approvals,
+    classify,
+    runLeave,
+    runPolicyQa,
+  };
 }
 type World = ReturnType<typeof makeWorld>;
 
@@ -409,8 +466,7 @@ describe('dispatch', () => {
 
   it('AT-8: each non-leave label gets its fixed reply or question and runs no sub-agent', async () => {
     const cases: [Label, string, string][] = [
-      ['policy_qa', 'reply', 'NOT-AVAILABLE-FIXTURE'],
-      ['onboarding', 'reply', 'NOT-AVAILABLE-FIXTURE'],
+      ['onboarding', 'reply', 'NOT-AVAILABLE-FIXTURE'], // policy_qa now runs the agent (policy-qa amendment)
       ['prohibited', 'reply', 'PROHIBITED-FIXTURE'],
       ['out_of_scope', 'reply', 'OUT-OF-SCOPE-FIXTURE'],
       ['unclear', 'question', 'Which request do you mean?'],
@@ -445,13 +501,35 @@ describe('dispatch', () => {
     const w = makeWorld({
       texts: { escalated: 'ESCALATED-FIXTURE', returned: 'RETURNED-FIXTURE' },
     });
-    w.classify.mockResolvedValue(D('policy_qa'));
+    w.classify.mockResolvedValue(D('onboarding'));
     const { post } = await boot(w);
     const res = await post('emp-004', 'What does the handbook say about carry over?');
     expect(res.status).toBe(200);
     const body = MessageResponse.parse(res.body);
     expect(body.kind).toBe('escalated');
     expect('text' in body ? body.text : null).toBe('ESCALATED-FIXTURE');
+    expect(w.runLeave).not.toHaveBeenCalled();
+    expect(await w.approvals.list()).toEqual([]);
+  });
+
+  it('policy-qa AT-19: a policy_qa label runs the Policy Q&A Agent exactly once and replies with the answer', async () => {
+    const w = makeWorld();
+    w.classify.mockResolvedValue(D('policy_qa'));
+    const { post } = await boot(w);
+    const res = await post('emp-004', 'How many sick days do I get?');
+    expect(res.status).toBe(200);
+    expect(MessageResponse.parse(res.body)).toEqual({
+      kind: 'policy_answer',
+      requestId: 'lr-001',
+      text: 'You get 10 sick days per year.',
+      sectionIds: ['HB-1.2'],
+    });
+    expect(w.runPolicyQa).toHaveBeenCalledTimes(1);
+    expect(w.runPolicyQa.mock.calls[0]?.[0]).toEqual({
+      requestId: 'lr-001',
+      actor: { employeeId: 'emp-004', role: 'employee' },
+      question: 'How many sick days do I get?',
+    });
     expect(w.runLeave).not.toHaveBeenCalled();
     expect(await w.approvals.list()).toEqual([]);
   });

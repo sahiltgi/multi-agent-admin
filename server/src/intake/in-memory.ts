@@ -1,7 +1,13 @@
 // In-memory port implementations for intake tests and local runs (spec request-intake, D-2, D-11).
 // Every read and write clones, so callers never share state with the store.
+import type { QaTextLoader, QaTextName } from '../agents/policy_qa/texts.js';
+import { PolicyQuestion, type PolicyQuestionStore } from '../domain/qa.js';
 import type { ApprovalItem, LeaveRequest } from '../domain/schemas.js';
-import type { ResolvedSubject, SubjectResolver } from '../http/approvals/ports.js';
+import {
+  resolveEscalation,
+  type ResolvedSubject,
+  type SubjectResolver,
+} from '../http/approvals/ports.js';
 import type {
   IdempotencyBegin,
   IdempotencyStore,
@@ -18,7 +24,11 @@ export class InMemoryLeaveRequestStore implements LeaveRequestStore, SubjectReso
   private readonly byId = new Map<string, LeaveRequest>();
   private readonly messageOwners = new Map<string, string>();
 
-  constructor(leaves: readonly LeaveRequest[] = []) {
+  /** `questions` resolves escalation items (spec policy-qa, rule 23); without it they give null. */
+  constructor(
+    leaves: readonly LeaveRequest[] = [],
+    private readonly questions: PolicyQuestionStore | null = null,
+  ) {
     for (const l of leaves) this.byId.set(l.id, structuredClone(l));
   }
 
@@ -48,12 +58,18 @@ export class InMemoryLeaveRequestStore implements LeaveRequestStore, SubjectReso
   }
 
   resolve(item: ApprovalItem): Promise<ResolvedSubject | null> {
+    if (item.kind === 'escalation') {
+      return this.questions === null
+        ? Promise.resolve(null)
+        : resolveEscalation(item, this.questions);
+    }
     const leave = item.kind === 'leave_request' ? this.byId.get(item.subjectId) : undefined;
     if (leave === undefined) return Promise.resolve(null);
     return Promise.resolve({
       ownerEmployeeId: leave.employeeId,
       leave: structuredClone(leave),
       gateResult: leave.gateResult === undefined ? null : structuredClone(leave.gateResult),
+      policyQuestion: null,
     });
   }
 
@@ -125,6 +141,38 @@ export class InMemoryIntakeTexts implements IntakeTextLoader {
   constructor(private readonly texts: Partial<Record<IntakeTextName, string>>) {}
 
   load(name: IntakeTextName): Promise<string | null> {
+    const text = this.texts[name];
+    return Promise.resolve(text === undefined || text.trim() === '' ? null : text);
+  }
+}
+
+/** PolicyQuestion records held in memory (spec policy-qa, rule 21). Parses in, clones out. */
+export class InMemoryPolicyQuestionStore implements PolicyQuestionStore {
+  private readonly byId = new Map<string, PolicyQuestion>();
+
+  insert(q: PolicyQuestion): Promise<boolean> {
+    const parsed = PolicyQuestion.parse(q);
+    if (this.byId.has(parsed.id)) return Promise.resolve(false);
+    this.byId.set(parsed.id, structuredClone(parsed));
+    return Promise.resolve(true);
+  }
+
+  get(id: string): Promise<PolicyQuestion | null> {
+    const q = this.byId.get(id);
+    return Promise.resolve(q === undefined ? null : structuredClone(q));
+  }
+
+  remove(id: string): Promise<void> {
+    this.byId.delete(id);
+    return Promise.resolve();
+  }
+}
+
+/** The Policy Q&A fixed texts held in memory; a missing or blank text loads as null. */
+export class InMemoryQaTexts implements QaTextLoader {
+  constructor(private readonly texts: Partial<Record<QaTextName, string>>) {}
+
+  load(name: QaTextName): Promise<string | null> {
     const text = this.texts[name];
     return Promise.resolve(text === undefined || text.trim() === '' ? null : text);
   }

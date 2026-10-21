@@ -147,7 +147,7 @@ describe('runSeed', () => {
     expect(h.calls).toContain('disconnect');
   });
 
-  it('AT-20: (mongo-persistence D-15, amended by chat-endpoint) clears exactly the four collections after connect and before any replaceAll', async () => {
+  it('AT-20: (mongo-persistence D-15, amended by chat-endpoint and policy-qa) clears exactly the five collections after connect and before any replaceAll', async () => {
     const h = harness();
     const code = await runSeed(h.deps({ MONGODB_URI: GOOD_URI }));
     expect(code).toBe(0);
@@ -157,6 +157,7 @@ describe('runSeed', () => {
       'clear:conversations',
       'clear:idempotencyRecords',
       'clear:messageOwners',
+      'clear:policyQuestions',
     ]);
     expect(clears.some((c) => c.toLowerCase().includes('audit'))).toBe(false);
     const connectAt = h.calls.indexOf('connect');
@@ -187,7 +188,11 @@ describe('chat-endpoint seeding', () => {
     expect([...SEED_CLEARED]).toContain('conversations');
   });
 
-  it('AT-33: clear is called for exactly the four collections, each before any replaceAll, never for audit', async () => {
+  it('policy-qa AT-42: SEED_CLEARED contains policyQuestions', () => {
+    expect([...SEED_CLEARED]).toContain('policyQuestions');
+  });
+
+  it('AT-33: clear is called for exactly the five collections, each before any replaceAll, never for audit', async () => {
     const h = harness();
     expect(await runSeed(h.deps({ MONGODB_URI: GOOD_URI }))).toBe(0);
     const clears = h.calls.filter((c) => c.startsWith('clear:'));
@@ -196,6 +201,7 @@ describe('chat-endpoint seeding', () => {
       'clear:conversations',
       'clear:idempotencyRecords',
       'clear:messageOwners',
+      'clear:policyQuestions',
     ]);
     expect(clears.some((c) => c.toLowerCase().includes('audit'))).toBe(false);
     expect(Math.max(...clears.map((c) => h.calls.indexOf(c)))).toBeLessThan(

@@ -82,3 +82,39 @@ const conversationSchema = new Schema<StoredConversation>(
 );
 conversationSchema.index({ id: 1, userId: 1 });
 export const ConversationModel = model<StoredConversation>('Conversation', conversationSchema);
+
+// ---- PolicyQuestion (spec policy-qa, rule 21; DD-20) ----
+// The Zod schema lives in domain/qa.ts and is applied on every write and read; the gate result is
+// stored as given, so Mongoose never coerces it.
+interface StoredPolicyQuestion {
+  id: string;
+  employeeId: string;
+  question: string;
+  draftAnswer: string | null;
+  escalation: string;
+  gateResult: unknown;
+  policyVersion: string;
+  policyHash: string;
+  handbookHash: string;
+  createdAt: string;
+}
+
+const policyQuestionSchema = new Schema<StoredPolicyQuestion>(
+  {
+    id: { type: String, required: true, unique: true },
+    employeeId: { type: String, required: true },
+    question: { type: String, required: true },
+    draftAnswer: { type: String, default: null },
+    escalation: { type: String, required: true },
+    gateResult: { type: Schema.Types.Mixed, default: null },
+    policyVersion: { type: String, required: true },
+    policyHash: { type: String, required: true },
+    handbookHash: { type: String, required: true },
+    createdAt: { type: String, required: true },
+  },
+  { ...TOP_LEVEL, collection: 'policyQuestions', minimize: false },
+);
+export const PolicyQuestionModel = model<StoredPolicyQuestion>(
+  'PolicyQuestion',
+  policyQuestionSchema,
+);

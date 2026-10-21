@@ -69,21 +69,21 @@ type Outcome =
   | { outcome: 'tool_violation'; tool: string }
   | { outcome: 'error'; code: ErrorCode };
 
-type Settled<T> =
+export type Settled<T> =
   { kind: 'value'; value: T } | { kind: 'error'; error: unknown } | { kind: 'aborted' };
 
 const TOOL_FAILED_TEXT = 'Tool failed. The error was logged.';
 const EXCERPT_CHARS = 200;
 
-/** Converts a synchronous throw into a rejection. */
-function invoke<T>(fn: () => Promise<T>): Promise<T> {
+/** Converts a synchronous throw into a rejection. Also used by the Policy Q&A Agent. */
+export function invoke<T>(fn: () => Promise<T>): Promise<T> {
   return new Promise<T>((resolve) => {
     resolve(fn());
   });
 }
 
-/** Settles with whichever comes first: the promise or the run's abort. */
-function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<Settled<T>> {
+/** Settles with whichever comes first: the promise or the run's abort. Also used by policy_qa. */
+export function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<Settled<T>> {
   return new Promise((resolve) => {
     if (signal.aborted) {
       promise.catch(() => undefined); // the late result is discarded (rule 7)

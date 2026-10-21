@@ -1,5 +1,5 @@
-// Leave policy loader (spec leave-policy, rules 11–14). Runs once at boot; does I/O, so it
-// lives outside server/src/gate/. The gate receives the LoadedLeavePolicy it returns.
+// Policy loaders (spec leave-policy, rules 11–14; spec policy-qa, rule 3). Run once at boot; they
+// do I/O, so they live outside server/src/gate/. The gates receive the loaded policies they return.
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { basename, extname } from 'node:path';
@@ -17,6 +17,7 @@ import {
 } from 'yaml';
 import { z } from 'zod';
 import { LeavePolicyV1, LoadedLeavePolicy } from '../gate/leave-policy.schema.js';
+import { LoadedQaPolicy, QaPolicyV1 } from '../gate/qa-policy.schema.js';
 
 const IssuePath = z.array(z.union([z.string(), z.number()]));
 type IssuePath = z.infer<typeof IssuePath>;
@@ -53,13 +54,14 @@ export class PolicyLoadError extends Error {
   readonly kind: PolicyLoadKind;
   readonly issues: PolicyLoadIssue[];
 
-  constructor(shape: PolicyLoadErrorShape) {
+  /** `label` names the policy in the message: "Leave" (the default) or "QA". */
+  constructor(shape: PolicyLoadErrorShape, label = 'Leave') {
     const { filePath, kind, issues } = PolicyLoadErrorShape.parse(shape);
     const lines = issues.map(
       (i) =>
         `  - ${formatPath(i.path)}${i.line === undefined ? '' : ` (line ${String(i.line)})`}: ${i.message}`,
     );
-    super([`Leave policy failed to load (${kind}): ${filePath}`, ...lines].join('\n'));
+    super([`${label} policy failed to load (${kind}): ${filePath}`, ...lines].join('\n'));
     this.name = 'PolicyLoadError';
     this.filePath = filePath;
     this.kind = kind;
@@ -128,22 +130,21 @@ function aliasIssues(doc: Document.Parsed, lines: LineCounter): PolicyLoadIssue[
   return issues;
 }
 
-function readBytes(filePath: string): Buffer {
+function readBytes(filePath: string, label: string): Buffer {
   try {
     return readFileSync(filePath);
   } catch (e) {
     const code = e instanceof Error && 'code' in e ? String(e.code) : 'unknown error';
-    throw new PolicyLoadError({
-      filePath,
-      kind: 'read',
-      issues: [{ path: [], message: `cannot read file (${code})` }],
-    });
+    throw new PolicyLoadError(
+      { filePath, kind: 'read', issues: [{ path: [], message: `cannot read file (${code})` }] },
+      label,
+    );
   }
 }
 
-function parseYaml(filePath: string, bytes: Buffer): unknown {
+function parseYaml(filePath: string, bytes: Buffer, label: string): unknown {
   const fail = (issues: PolicyLoadIssue[]) =>
-    new PolicyLoadError({ filePath, kind: 'yaml', issues });
+    new PolicyLoadError({ filePath, kind: 'yaml', issues }, label);
   let source: string;
   try {
     // ignoreBOM keeps a leading BOM in the text; the YAML parser skips it.
@@ -177,38 +178,54 @@ function parseYaml(filePath: string, bytes: Buffer): unknown {
 }
 
 /**
- * Reads, hashes, parses and validates a leave policy file. Sync; called once at boot.
- * policyHash is SHA-256 over the raw bytes, before any decoding or normalisation (rule 12).
+ * Reads, hashes, parses and validates a policy file against `schema`; the version must match the
+ * file stem. policyHash is SHA-256 over the raw bytes, before any decoding or normalisation
+ * (leave-policy rule 12).
  */
-export function loadLeavePolicy(filePath: string): LoadedLeavePolicy {
-  const bytes = readBytes(filePath);
+function loadPolicyFile<T extends { version: string }>(
+  filePath: string,
+  schema: z.ZodType<T>,
+  label: string,
+): { policy: T; policyVersion: string; policyHash: string } {
+  const bytes = readBytes(filePath, label);
   const policyHash = createHash('sha256').update(bytes).digest('hex');
-  const raw = parseYaml(filePath, bytes);
+  const raw = parseYaml(filePath, bytes, label);
 
-  const parsed = LeavePolicyV1.safeParse(raw);
+  const parsed = schema.safeParse(raw);
   if (!parsed.success) {
-    throw new PolicyLoadError({
-      filePath,
-      kind: 'schema',
-      // Zod issue messages describe the expectation, never the received value.
-      issues: parsed.error.issues.map((i) => ({
-        path: i.path.map((seg) => (typeof seg === 'symbol' ? String(seg) : seg)),
-        message: i.message,
-      })),
-    });
+    throw new PolicyLoadError(
+      {
+        filePath,
+        kind: 'schema',
+        // Zod issue messages describe the expectation, never the received value.
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.map((seg) => (typeof seg === 'symbol' ? String(seg) : seg)),
+          message: i.message,
+        })),
+      },
+      label,
+    );
   }
   const stem = basename(filePath, extname(filePath));
   if (parsed.data.version !== stem) {
-    throw new PolicyLoadError({
-      filePath,
-      kind: 'schema',
-      issues: [{ path: ['version'], message: `version must match the file name "${stem}"` }],
-    });
+    throw new PolicyLoadError(
+      {
+        filePath,
+        kind: 'schema',
+        issues: [{ path: ['version'], message: `version must match the file name "${stem}"` }],
+      },
+      label,
+    );
   }
+  return { policy: parsed.data, policyVersion: parsed.data.version, policyHash };
+}
 
-  return LoadedLeavePolicy.parse({
-    policy: parsed.data,
-    policyVersion: parsed.data.version,
-    policyHash,
-  });
+/** Reads, hashes, parses and validates a leave policy file. Sync; called once at boot. */
+export function loadLeavePolicy(filePath: string): LoadedLeavePolicy {
+  return LoadedLeavePolicy.parse(loadPolicyFile(filePath, LeavePolicyV1, 'Leave'));
+}
+
+/** Reads, hashes, parses and validates the QA sensitive-topics policy (spec policy-qa, rule 3). */
+export function loadQaPolicy(filePath: string): LoadedQaPolicy {
+  return LoadedQaPolicy.parse(loadPolicyFile(filePath, QaPolicyV1, 'QA'));
 }

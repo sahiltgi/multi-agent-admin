@@ -59,12 +59,21 @@ export const ModelRequest = z
     model: z.string().min(1),
     system: z.string().min(1), // loaded from prompts/ (rule 2)
     messages: z.array(Message),
-    tools: z.array(ToolSpec), // the agent's allowlist only (rule 4)
-    tool_choice: z.object({ type: z.literal('auto') }).strict(),
+    tools: z.array(ToolSpec).min(1).optional(), // the agent's allowlist only (rule 4)
+    tool_choice: z
+      .object({ type: z.literal('auto') })
+      .strict()
+      .optional(),
     max_tokens: z.number().int().positive(),
     output_config: z.object({ effort: Effort }).strict(),
   })
-  .strict();
+  .strict()
+  // A tool-less agent sends neither key; tool_choice is never sent with an empty tools list
+  // (spec policy-qa, DD-19; AT-52).
+  .refine((r) => (r.tool_choice !== undefined) === (r.tools !== undefined), {
+    path: ['tool_choice'],
+    error: 'tool_choice is required exactly when tools is present',
+  });
 export type ModelRequest = z.infer<typeof ModelRequest>;
 
 /** Read-only view of a response. The runtime appends the ORIGINAL content, never this copy (rule 5). */

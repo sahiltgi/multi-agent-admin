@@ -7,8 +7,15 @@ import type {
   OrchestratorInput,
   RoutingDecision,
 } from '../agents/orchestrator/schemas.js';
+import type { PolicyQaInput, PolicyQaResult } from '../agents/policy_qa/schemas.js';
+import type { QaTextLoader } from '../agents/policy_qa/texts.js';
+import type { PolicyQuestionStore } from '../domain/qa.js';
 import type { ApprovalItem, LeaveRequest } from '../domain/schemas.js';
 import type { ApprovalStore, EmployeeDirectory } from '../http/approvals/ports.js';
+
+// Defined in domain/qa.ts so the approval-queue resolver can use it without importing intake
+// (spec policy-qa DD-23).
+export type { PolicyQuestionStore };
 
 export interface LeaveRequestStore {
   /** Adds a new request; false if the id exists, never overwrites. */
@@ -62,4 +69,9 @@ export interface IntakeDeps {
   runLeave: (input: LeaveInput) => Promise<LeaveAgentResult>;
   texts: IntakeTextLoader;
   idempotency: IdempotencyStore;
+  /** The Policy Q&A Agent, run once for a policy_qa label (spec policy-qa, rule 19). */
+  runPolicyQa: (input: PolicyQaInput) => Promise<PolicyQaResult>;
+  policyQuestions: PolicyQuestionStore;
+  /** prompts/policy_qa/messages: the fixed "passed to HR" text (DD-21, DD-23). */
+  qaTexts: QaTextLoader;
 }

@@ -96,6 +96,8 @@ describe('chat schemas', () => {
       verdict: null,
       policyVersion: null,
       policyHash: null,
+      qaVerdict: null, // policy-qa amendment
+      policyQuestionId: null, // policy-qa amendment
       injectionSuspected: false,
     });
     expect(ChatTurnPayload.safeParse(payload('free text')).success).toBe(false);
@@ -127,6 +129,15 @@ describe('chat schemas', () => {
       verdict: 'ROUTE_TO_MANAGER',
       failedRules: [],
     };
+    const answered = { kind: 'policy_answer', sectionIds: ['HB-1.2'] };
+    expect(ChatResponse.safeParse({ ...base, status: 'answered', card: answered }).success).toBe(
+      true,
+    );
+    expect(ChatResponse.safeParse({ ...base, status: 'answered' }).success).toBe(false);
+    expect(
+      ChatResponse.safeParse({ ...base, status: 'escalated_to_hr', card: answered }).success,
+    ).toBe(false);
+    expect(ChatResponse.safeParse({ ...base, status: 'escalated_to_hr' }).success).toBe(true);
     expect(ChatResponse.safeParse({ ...base, status: 'reply' }).success).toBe(true);
     expect(
       ChatResponse.safeParse({ ...base, status: 'leave_returned', card: returned }).success,

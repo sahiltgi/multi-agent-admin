@@ -392,6 +392,49 @@ describe('request-intake domain amendments (D-1, D-8)', () => {
   });
 });
 
+describe('policy-qa AT-51: resolved escalation items (domain part)', () => {
+  const resolvedEsc = {
+    ...validApproval,
+    kind: 'escalation',
+    assigneeRole: 'hr_admin',
+    status: 'resolved',
+    decision: {
+      action: 'resolve',
+      byEmployeeId: 'emp-001',
+      comment: 'Replied by email (synthetic)',
+      at: '2026-10-19T09:00:00Z',
+    },
+  };
+
+  it('AT-51: accepts a resolved escalation item with a resolve decision and a comment', () => {
+    expect(ApprovalItem.safeParse(resolvedEsc).success).toBe(true);
+  });
+
+  it('AT-51: rejects the invalid combinations', () => {
+    const noComment = { ...resolvedEsc, decision: without(resolvedEsc.decision, 'comment') };
+    expect(ApprovalItem.safeParse(noComment).success).toBe(false);
+    expect(
+      ApprovalItem.safeParse({
+        ...resolvedEsc,
+        decision: { ...resolvedEsc.decision, comment: '  ' },
+      }).success,
+    ).toBe(false);
+    expect(ApprovalItem.safeParse({ ...resolvedEsc, kind: 'leave_request' }).success).toBe(false);
+    expect(
+      ApprovalItem.safeParse({
+        ...resolvedEsc,
+        decision: { ...resolvedEsc.decision, action: 'approve' },
+      }).success,
+    ).toBe(false);
+    expect(ApprovalItem.safeParse({ ...resolvedEsc, status: 'open' }).success).toBe(false);
+  });
+
+  it('AT-51: ENTITY_SCHEMAS still has exactly 8 keys', () => {
+    expect(Object.keys(ENTITY_SCHEMAS)).toHaveLength(8);
+    expect(Object.keys(ENTITY_SCHEMAS)).not.toContain('PolicyQuestion');
+  });
+});
+
 describe('ServerEnv (spec leave-policy D-4)', () => {
   it('LEAVE_POLICY_PATH is optional and unrelated variables are ignored', () => {
     expect(ServerEnv.parse({ PATH: '/usr/bin' })).toEqual({});

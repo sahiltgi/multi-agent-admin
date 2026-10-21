@@ -4,6 +4,8 @@
 import { z } from 'zod';
 import { MAX_USER_TEXT_CHARS } from '../agents/schemas.js';
 import { EscalationReason } from '../agents/leave/schemas.js';
+import { QaFailureReason } from '../agents/policy_qa/schemas.js';
+import { QaVerdict, SectionId } from '../domain/qa.js';
 import { ClarifyingQuestion, RouteLabel } from '../agents/orchestrator/schemas.js';
 import {
   ApprovalStatus,
@@ -65,7 +67,8 @@ export const MessageResponse = z.discriminatedUnion('kind', [
     .object({
       kind: z.literal('reply'),
       requestId: Id,
-      label: z.enum(['prohibited', 'out_of_scope', 'policy_qa', 'onboarding', 'leave']),
+      // policy_qa now runs the Policy Q&A Agent (spec policy-qa, rule 19)
+      label: z.enum(['prohibited', 'out_of_scope', 'onboarding', 'leave']),
       text: z.string().min(1),
     })
     .strict(),
@@ -95,6 +98,18 @@ export const MessageResponse = z.discriminatedUnion('kind', [
     })
     .strict(),
   z.object({ kind: z.literal('escalated'), requestId: Id, text: z.string().min(1) }).strict(),
+  // spec policy-qa, rules 20, 21: a gate-approved answer, or the fixed "passed to HR" text
+  z
+    .object({
+      kind: z.literal('policy_answer'),
+      requestId: Id,
+      text: z.string().min(1),
+      sectionIds: z.array(SectionId).min(1),
+    })
+    .strict(),
+  z
+    .object({ kind: z.literal('policy_escalated'), requestId: Id, text: z.string().min(1) })
+    .strict(),
 ]);
 export type MessageResponse = z.infer<typeof MessageResponse>;
 
@@ -108,6 +123,9 @@ export const DispatchEscalation = z.enum([
   'hand_back_fresh',
   'fixed_message_missing', // the OrchestratorFailure code that takes the escalation path
   ...EscalationReason.options,
+  'qa_gate', // the Q&A gate escalated (spec policy-qa, rule 25)
+  // Policy Q&A failures that escalate to HR (rule 19); model_unavailable is already listed
+  ...QaFailureReason.exclude(['model_unavailable', 'audit_failed']).options,
 ]);
 export type DispatchEscalation = z.infer<typeof DispatchEscalation>;
 
@@ -118,6 +136,8 @@ export const INTAKE_OUTCOMES = [
   'leave_submitted',
   'leave_returned',
   'escalated',
+  'policy_answer',
+  'policy_escalated',
 ] as const;
 
 export const IntakePayload = z
@@ -137,6 +157,8 @@ export const IntakePayload = z
     verdict: LeaveVerdict.nullable(), // copied from the card; never from model text
     policyVersion: z.string().nullable(),
     policyHash: z.string().nullable(), // unredacted (leave-agent D-16)
+    qaVerdict: QaVerdict.nullable(), // copied from the Q&A gate (spec policy-qa, rule 25)
+    policyQuestionId: Id.nullable(),
     injectionSuspected: z.boolean(),
   })
   .strict(); // no user text, reply text or reason

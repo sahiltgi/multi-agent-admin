@@ -160,13 +160,14 @@ export const APPROVAL_KINDS = ['leave_request', 'onboarding_deviation', 'escalat
 export const ApprovalKind = z.enum(APPROVAL_KINDS);
 export type ApprovalKind = z.infer<typeof ApprovalKind>;
 
-export const APPROVAL_STATUSES = ['open', 'approved', 'rejected'] as const;
+// 'resolved' closes an escalation item without a decision on any leave (spec policy-qa, rule 28).
+export const APPROVAL_STATUSES = ['open', 'approved', 'rejected', 'resolved'] as const;
 export const ApprovalStatus = z.enum(APPROVAL_STATUSES);
 export type ApprovalStatus = z.infer<typeof ApprovalStatus>;
 
 export const ApprovalDecision = z
   .object({
-    action: z.enum(['approve', 'reject', 'comment']),
+    action: z.enum(['approve', 'reject', 'comment', 'resolve']),
     byEmployeeId: Id,
     comment: z.string().trim().optional(),
     at: IsoDateTime,
@@ -193,6 +194,17 @@ export const ApprovalItem = z
       i.decision?.action !== 'approve' ||
       (i.decision.comment !== undefined && i.decision.comment !== ''),
     { path: ['decision', 'comment'], error: 'approving a flagged item needs a comment' },
+  )
+  // A resolve decision iff status 'resolved'; only escalation items, always with a comment
+  // (spec policy-qa, rule 28; AT-51).
+  .refine(
+    (i) =>
+      (i.decision?.action === 'resolve') === (i.status === 'resolved') &&
+      (i.status !== 'resolved' ||
+        (i.kind === 'escalation' &&
+          i.decision?.comment !== undefined &&
+          i.decision.comment !== '')),
+    { path: ['decision'], error: 'a resolved item needs a resolve decision with a comment' },
   );
 export type ApprovalItem = z.infer<typeof ApprovalItem>;
 
