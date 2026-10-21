@@ -116,6 +116,19 @@ export function createIntakeRoutes(deps: IntakeDeps): RouteDefinition[] {
           },
           { ...outcome.gate, outcome: 'leave_returned', escalation: null },
         );
+      case 'policy_answer':
+        // spec policy-qa, rule 20: the gate said AUTO_ANSWER; nothing is persisted.
+        return finish(
+          {
+            kind: 'policy_answer',
+            requestId,
+            text: outcome.text,
+            sectionIds: outcome.sectionIds,
+          },
+          { ...outcome.gate, outcome: 'policy_answer', escalation: null },
+        );
+      case 'policy_escalate':
+        return escalatePolicyQuestion(outcome);
       case 'hand_back':
       case 'model_unavailable':
         // Unreachable: /messages never continues a task and never asks for retries.
@@ -124,35 +137,66 @@ export function createIntakeRoutes(deps: IntakeDeps): RouteDefinition[] {
         break;
     }
 
-    const { leave, item, card, failedRules, records } = outcome;
-    let event: AuditEvent;
-    try {
-      event = buildEvent({ ...records, outcome: 'leave_submitted', escalation: null });
-    } catch {
-      throw internalError();
-    }
-    // Validated before the first write, so nothing can fail after the records commit.
-    const response = MessageResponse.parse({
-      kind: 'leave_submitted',
-      requestId,
-      request: toView(leave, item),
-      verdict: card.verdict,
-      failedRules,
-    });
+    return submitLeave(outcome);
 
-    // ---- writes: request, item, event; compensate in reverse on failure (D-13) ----
-    const written = await dispatcher.writeRecords(leave, item);
-    if (!written.ok) {
-      if (written.failed === 'item') await tryAudit('store_error');
-      throw internalError();
+    /** spec policy-qa, rules 21, 22: parse first, then question, item, event; undo on failure. */
+    async function escalatePolicyQuestion(
+      o: Extract<typeof outcome, { kind: 'policy_escalate' }>,
+    ): Promise<MessageResponse> {
+      let event: AuditEvent;
+      try {
+        event = buildEvent({ ...o.records, outcome: 'policy_escalated', escalation: o.escalation });
+      } catch {
+        throw internalError();
+      }
+      const response = MessageResponse.parse({ kind: 'policy_escalated', requestId, text: o.text });
+      const written = await dispatcher.writePolicyEscalation(o.question, o.item);
+      if (!written.ok) {
+        if (written.failed === 'item') await tryAudit('store_error');
+        throw internalError();
+      }
+      try {
+        await deps.audit.write(event);
+      } catch {
+        await written.undo();
+        throw internalError();
+      }
+      return response;
     }
-    try {
-      await deps.audit.write(event);
-    } catch {
-      await written.undo();
-      throw internalError();
+
+    async function submitLeave(
+      o: Extract<typeof outcome, { kind: 'submit' }>,
+    ): Promise<MessageResponse> {
+      const { leave, item, card, failedRules, records } = o;
+      let event: AuditEvent;
+      try {
+        event = buildEvent({ ...records, outcome: 'leave_submitted', escalation: null });
+      } catch {
+        throw internalError();
+      }
+      // Validated before the first write, so nothing can fail after the records commit.
+      const response = MessageResponse.parse({
+        kind: 'leave_submitted',
+        requestId,
+        request: toView(leave, item),
+        verdict: card.verdict,
+        failedRules,
+      });
+
+      // ---- writes: request, item, event; compensate in reverse on failure (D-13) ----
+      const written = await dispatcher.writeRecords(leave, item);
+      if (!written.ok) {
+        if (written.failed === 'item') await tryAudit('store_error');
+        throw internalError();
+      }
+      try {
+        await deps.audit.write(event);
+      } catch {
+        await written.undo();
+        throw internalError();
+      }
+      return response;
     }
-    return response;
   }
 
   const postMessage = defineRoute({

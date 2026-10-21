@@ -68,6 +68,7 @@ scripts/             repo tooling (test-one.mjs)
 .github/             CI workflow (human-edited only), CODEOWNERS, PR template
 docs/                brief.md, architecture.md, ai-policy.md, dev-agents.md, mcp-inventory.md
 docs/adr/            architecture decision records
+handbook/            synthetic employee handbook (HB-x.y section IDs); Policy Q&A source (ADR-0003)
 README.md            clone-to-green and a where-to-find-what map
 AI_LOG.md            daily log of AI use, failures and the rules they led to
 specs/               _template.md; one spec per feature, written before code
@@ -86,6 +87,9 @@ Planned in brief §9. Most parts don't exist yet; the notes say which do. Create
 - `server/src/gate/`: Policy Gate, pure functions over `policies/` with no I/O, clock or LLM.
 - `server/src/agents/`: orchestrator and sub-agents with code-enforced tool allowlists.
 - `policies/`: versioned YAML rules, validated with Zod. `policies/leave/v1.yaml` exists; its schema is `server/src/gate/leave-policy.schema.ts` (spec leave-policy).
+- `server/src/gate/qa.ts`: the Policy Q&A gate (`evaluateQa`), pure. It verifies that citations are verbatim and sit inside `HB-n.m` sections, and checks for sensitive topics. Its YAML is `policies/qa/v1.yaml`, validated by `server/src/gate/qa-policy.schema.ts` (spec policy-qa).
+- `server/src/domain/handbook.ts` and `server/src/domain/qa.ts`: pure handbook helpers (body, sections, whitespace normalisation) and the shared Q&A schemas (`QaGateResult`, `PolicyQuestion`, `PolicyQuestionStore`). They sit in `domain/` so `server/src/http/` can use them without importing `/gate/` (spec policy-qa DD-23).
+- `server/src/agents/policy_qa/`: the Policy Q&A Agent. It makes one Claude call with the handbook as a cached, citation-enabled document, with no tools and no tool loop. It parses the response at the boundary, then calls the Q&A gate (spec policy-qa). Dispatch writes a `PolicyQuestion` and an `escalation` item on `ESCALATE_TO_HR`. HR sees the question in the queue and closes the item with `resolve`.
 - `server/src/http/`: Express 5 app, typed Zod route helper, `x-demo-user` identity ([ADR-0005](adr/0005-demo-user-header.md)) and error contract; `server/src/http/approvals/` holds the approval queue and audit trace routes, their ports and in-memory fakes (spec approval-queue).
 - `server/src/intake/`: `POST /messages` and `GET /my-requests`. Dispatches a message through the orchestrator to the Leave Agent and turns a card into a pending `LeaveRequest` plus one `ApprovalItem`; ports and in-memory fakes (spec request-intake). Mounted through `createApp`'s `extraRoutes`, so `server/src/http/` still imports no agent code.
 - `server/src/chat/`: `POST /chat` and `GET /conversations/:id`. A conversation belongs to one user; with no active task the orchestrator classifies the message, and with an active Leave task the Leave Agent continues from a code-rendered draft. Shares the intake dispatcher (`server/src/intake/dispatch.ts`) and stores; ports and the in-memory store sit here, `MongoConversationStore` in persistence (spec chat-endpoint). Mounted through `createApp`'s `extraRoutes`.

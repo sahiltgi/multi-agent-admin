@@ -14,6 +14,7 @@ import {
   LeaveRequest,
   type LeaveGateResult,
 } from '../../domain/schemas.js';
+import type { PolicyQuestion, PolicyQuestionStore } from '../../domain/qa.js';
 import {
   InMemoryApprovalStore,
   InMemoryAuditReader,
@@ -295,6 +296,63 @@ function leaveStoreContract(
   });
 }
 
+function mkQuestion(id: string, over: Partial<PolicyQuestion> = {}): PolicyQuestion {
+  return {
+    id,
+    employeeId: 'emp-004',
+    question: 'Who do I tell about bullying by a colleague?',
+    draftAnswer: 'You get 10 sick days per year.',
+    escalation: 'gate',
+    gateResult: {
+      verdict: 'ESCALATE_TO_HR',
+      ruleResults: [
+        { ruleId: 'citations_present', passed: true, expected: 'e', actual: 'a', message: 'm' },
+        { ruleId: 'citations_verbatim', passed: true, expected: 'e', actual: 'a', message: 'm' },
+        { ruleId: 'topic_not_sensitive', passed: false, expected: 'e', actual: 'a', message: 'm' },
+      ],
+      reason: 'Escalated to HR.',
+      policyVersion: 'v1',
+      policyHash: H,
+      sectionIds: ['HB-1.2'],
+    },
+    policyVersion: 'v1',
+    policyHash: H,
+    handbookHash: H2,
+    createdAt: NOW,
+    ...over,
+  };
+}
+
+// policy-qa AT-42 / AT-46: the PolicyQuestionStore contract, in-memory fake vs Mongo
+function policyQuestionContract(label: string, make: () => Promise<PolicyQuestionStore>): void {
+  describe(`policy-qa AT-42: ${label} PolicyQuestionStore contract`, () => {
+    it('AT-42: insert never overwrites; get returns the record or null; remove deletes it', async () => {
+      const store = await make();
+      const q = mkQuestion(unique('r'));
+      expect(await store.insert(q)).toBe(true);
+      expect(await store.insert({ ...q, question: 'changed' })).toBe(false);
+      expect(await store.get(q.id)).toEqual(q);
+      expect(hasStorageKeys(await store.get(q.id))).toBe(false);
+      expect(await store.get(unique('r-none'))).toBeNull();
+      expect(await store.get('{"$ne":null}')).toBeNull();
+      await store.remove(q.id);
+      expect(await store.get(q.id)).toBeNull();
+    });
+
+    it('AT-42: a record with a null draft and null gate result round-trips', async () => {
+      const store = await make();
+      const q = mkQuestion(unique('r'), {
+        draftAnswer: null,
+        gateResult: null,
+        escalation: 'stop_reason',
+      });
+      expect(await store.insert(q)).toBe(true);
+      expect(await store.get(q.id)).toEqual(q);
+      await store.remove(q.id);
+    });
+  });
+}
+
 function idempotencyContract(label: string, make: () => Promise<IdempotencyStore>): void {
   describe(`AT-1: ${label} IdempotencyStore contract`, () => {
     it('AT-1: begin, conflict, replay, expiry at exactly 24h, and release', async () => {
@@ -443,6 +501,22 @@ leaveStoreContract('mongo', async (leaves) => {
   return new MongoLeaveRequestStore();
 });
 
+policyQuestionContract('in-memory', async () => {
+  const { InMemoryPolicyQuestionStore } = await import('../../intake/in-memory.js');
+  return new InMemoryPolicyQuestionStore();
+});
+policyQuestionContract('mongo', async () => {
+  const { MongoPolicyQuestionStore } = await import('./policy-questions.js');
+  return new MongoPolicyQuestionStore();
+});
+
+describe('policy-qa AT-42: model placement', () => {
+  it('AT-42: ENTITY_SCHEMAS and MODELS still have exactly 8 keys', () => {
+    expect(Object.keys(MODELS)).toHaveLength(8);
+    expect(Object.keys(MODELS)).not.toContain('PolicyQuestion');
+  });
+});
+
 idempotencyContract('in-memory', () => Promise.resolve(new InMemoryIdempotencyStore()));
 idempotencyContract('mongo', async () => {
   await IdempotencyRecordModel.deleteMany({});
@@ -469,6 +543,7 @@ describe('mongo handle and adapters', () => {
       'idempotency',
       'leaveData',
       'leaveRequests',
+      'policyQuestions', // policy-qa amendment
     ]);
   });
 
@@ -518,9 +593,28 @@ describe('mongo handle and adapters', () => {
     const resolved = await store.resolve(mkItem('ai-001', 'lr-201'));
     expect(resolved?.ownerEmployeeId).toBe('emp-004');
     expect(resolved?.gateResult).toEqual(G);
+    // policy-qa amendment: an escalation item with no PolicyQuestion still resolves null.
     expect(await store.resolve(mkItem('ai-002', 'lr-201', { kind: 'escalation' }))).toBeNull();
     expect(await store.isLeaveRequest('lr-201')).toBe(true);
     expect((await store.listByEmployee('emp-003')).some((l) => l.id === 'lr-201')).toBe(false);
+  });
+
+  it('policy-qa AT-46: the Mongo resolver gives an escalation item its PolicyQuestion', async () => {
+    const { MongoPolicyQuestionStore } = await import('./policy-questions.js');
+    const questions = new MongoPolicyQuestionStore();
+    const q = mkQuestion(unique('r'));
+    expect(await questions.insert(q)).toBe(true);
+    const store = new MongoLeaveRequestStore(questions);
+    const item = mkItem(unique('ai'), q.id, { kind: 'escalation', assigneeRole: 'hr_admin' });
+    expect(await store.resolve(item)).toEqual({
+      ownerEmployeeId: 'emp-004',
+      leave: null,
+      gateResult: null,
+      policyQuestion: q,
+    });
+    expect(await store.resolve({ ...item, subjectId: unique('r-none') })).toBeNull();
+    expect(await store.isLeaveRequest(q.id)).toBe(false);
+    await questions.remove(q.id);
   });
 
   it('AT-6: message owners are unique; 10 concurrent calls give exactly one winner', async () => {

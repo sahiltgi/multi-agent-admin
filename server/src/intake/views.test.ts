@@ -16,6 +16,8 @@ import {
   InMemoryIdempotencyStore,
   InMemoryIntakeTexts,
   InMemoryLeaveRequestStore,
+  InMemoryPolicyQuestionStore,
+  InMemoryQaTexts,
 } from './in-memory.js';
 import type { IdempotencyStore, IntakeDeps, IntakeTextName } from './ports.js';
 import { createIntakeRoutes } from './routes.js';
@@ -105,6 +107,10 @@ function world(opts: {
     runLeave,
     texts: new InMemoryIntakeTexts(opts.texts ?? TEXTS),
     idempotency: opts.idempotency ?? new InMemoryIdempotencyStore(),
+    // policy-qa amendment: these views never route to the Policy Q&A Agent.
+    runPolicyQa: () => Promise.reject(new Error('runPolicyQa not used in these tests')),
+    policyQuestions: new InMemoryPolicyQuestionStore(),
+    qaTexts: new InMemoryQaTexts({}),
   };
   const app = createApp(
     {

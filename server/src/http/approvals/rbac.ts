@@ -30,9 +30,14 @@ export function isOwner(actor: Actor, { owner }: ItemContext): boolean {
   return owner !== null && owner.id === actor.employeeId;
 }
 
-/** Rule 5: own (read-only) or assignee. */
+/**
+ * Rule 5: own (read-only) or assignee. The own grant doesn't apply to escalation items, so an
+ * asker never sees their escalated question's item (spec policy-qa, rule 23). isOwner itself is
+ * unchanged, so actDenial still refuses an hr_admin acting on their own question (AT-49).
+ */
 export function canSee(actor: Actor, ctx: ItemContext): boolean {
-  return isOwner(actor, ctx) || isAssignee(actor, ctx);
+  const own = ctx.item.kind !== 'escalation' && isOwner(actor, ctx);
+  return own || isAssignee(actor, ctx);
 }
 
 export type ActDenial = 'forbidden' | 'self_action_forbidden';

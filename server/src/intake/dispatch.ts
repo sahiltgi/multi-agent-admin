@@ -5,12 +5,14 @@
 // gate. Nothing here approves or rejects (HARD RULE 1), and model text never picks a branch.
 import { z } from 'zod';
 import { LeaveAgentResult, type RecommendationCard } from '../agents/leave/schemas.js';
+import { PolicyQaResult, type QaFailureReason } from '../agents/policy_qa/schemas.js';
 import {
   ClarifyingQuestion,
   OrchestratorFailure,
   RoutingDecision,
   type RouteLabel,
 } from '../agents/orchestrator/schemas.js';
+import { PolicyQuestion, type PolicyQuestion as PolicyQuestionT } from '../domain/qa.js';
 import {
   ApprovalItem,
   LeaveRequest,
@@ -32,6 +34,8 @@ export type RecordParts = Pick<
   | 'verdict'
   | 'policyVersion'
   | 'policyHash'
+  | 'qaVerdict'
+  | 'policyQuestionId'
 >;
 
 export const NO_RECORD: RecordParts = {
@@ -43,6 +47,8 @@ export const NO_RECORD: RecordParts = {
   verdict: null,
   policyVersion: null,
   policyHash: null,
+  qaVerdict: null,
+  policyQuestionId: null,
 };
 
 /** Runs one compensating removal; a failure there must not stop the next one (D-13). */
@@ -77,8 +83,9 @@ export function toView(leave: LeaveRequestT, item: ApprovalItemT | null): MyRequ
     status: leave.status,
     approvalStatus: item?.status ?? null,
     // Never byEmployeeId: no other employee's id reaches the requester (rule 17, D-16).
+    // 'resolve' only ever closes an escalation item (domain ApprovalItem refine), never a leave item.
     decision:
-      decision === undefined
+      decision === undefined || decision.action === 'resolve'
         ? null
         : {
             action: decision.action,
@@ -100,9 +107,20 @@ export interface Routing {
 export type Outcome =
   | {
       kind: 'reply';
-      label: 'prohibited' | 'out_of_scope' | 'policy_qa' | 'onboarding' | 'leave';
+      label: 'prohibited' | 'out_of_scope' | 'onboarding' | 'leave';
       text: string;
       gate: RecordParts;
+    }
+  /** The Q&A gate said AUTO_ANSWER: the answer and section ids, copied (spec policy-qa, rule 20). */
+  | { kind: 'policy_answer'; text: string; sectionIds: string[]; gate: RecordParts }
+  /** A Q&A escalation: both records built and parsed, not yet written (rules 21, 22). */
+  | {
+      kind: 'policy_escalate';
+      question: PolicyQuestionT;
+      item: ApprovalItemT;
+      text: string;
+      escalation: DispatchEscalation;
+      records: RecordParts;
     }
   | {
       kind: 'question';
@@ -151,6 +169,8 @@ export interface Dispatcher {
     opts: DispatchOptions,
   ): Promise<{ outcome: Outcome; routing: Routing }>;
   writeRecords(leave: LeaveRequestT, item: ApprovalItemT): Promise<WriteResult>;
+  /** PolicyQuestion, then item; a failed item removes the question (spec policy-qa, rule 22). */
+  writePolicyEscalation(question: PolicyQuestionT, item: ApprovalItemT): Promise<WriteResult>;
 }
 
 const AgentDecision = z.union([RoutingDecision, OrchestratorFailure]);
@@ -204,6 +224,7 @@ export function createDispatcher(deps: IntakeDeps): Dispatcher {
 
       switch (decision.label) {
         case 'policy_qa':
+          return out(await policyQa(actor, requestId, mode.text, opts, routing));
         case 'onboarding': {
           const fixed = await deps.texts.load('not_available');
           if (fixed === null) return escalate('text_missing');
@@ -364,6 +385,125 @@ export function createDispatcher(deps: IntakeDeps): Dispatcher {
     });
   }
 
+  /**
+   * The Policy Q&A Agent, once (spec policy-qa, rules 19-21). Its verdict is copied from the
+   * gate output it carries; nothing here reads model text to pick a branch.
+   */
+  async function policyQa(
+    actor: Actor,
+    requestId: string,
+    question: string,
+    opts: DispatchOptions,
+    routing: Routing,
+  ): Promise<Outcome> {
+    const escalated = async (escalation: DispatchEscalation): Promise<Outcome> => ({
+      kind: 'escalate',
+      escalation,
+      text: await deps.texts.load('escalated'),
+    });
+    let raw: unknown;
+    try {
+      raw = await deps.runPolicyQa({ requestId, actor, question });
+    } catch {
+      return { kind: 'agent_error' };
+    }
+    const parsed = PolicyQaResult.safeParse(raw);
+    if (!parsed.success) return escalated('invalid_agent_output');
+    const result = parsed.data;
+    if (result.requestId !== requestId) return escalated('request_id_mismatch'); // rule 6
+    routing.injectionSuspected = result.injectionSuspected; // audit only
+
+    let failure: Exclude<QaFailureReason, 'audit_failed' | 'model_unavailable'> | null = null;
+    if (result.kind === 'failed') {
+      if (result.reason === 'audit_failed') return { kind: 'audit_failed' };
+      if (result.reason === 'model_unavailable') {
+        // DD-17: an outage is a retry on /chat and the intake escalation text on /messages,
+        // with no HR item, so an API outage doesn't flood the queue.
+        return opts.retryOnModelUnavailable
+          ? { kind: 'model_unavailable' }
+          : escalated('model_unavailable');
+      }
+      failure = result.reason;
+    }
+    const gate = result.kind === 'gated' ? result.gate : null;
+    const gateParts: RecordParts = {
+      ...NO_RECORD,
+      qaVerdict: gate?.verdict ?? null,
+      policyVersion: result.provenance.policyVersion,
+      policyHash: result.provenance.policyHash,
+    };
+    if (result.kind === 'gated' && result.gate.verdict === 'AUTO_ANSWER') {
+      return {
+        kind: 'policy_answer',
+        text: result.answerText,
+        sectionIds: result.gate.sectionIds,
+        gate: gateParts,
+      };
+    }
+
+    // ---- escalation: build and parse both records before any write (rule 22) ----
+    const text = await deps.qaTexts.load('escalated');
+    if (text === null) return { kind: 'escalate', escalation: 'text_missing', text: null };
+    const createdAt = deps.clock.nowIso();
+    const record = PolicyQuestion.safeParse({
+      id: requestId,
+      employeeId: actor.employeeId, // never from the body or the text
+      question,
+      draftAnswer: result.answerText,
+      escalation: failure ?? 'gate',
+      gateResult: gate,
+      policyVersion: result.provenance.policyVersion,
+      policyHash: result.provenance.policyHash,
+      handbookHash: result.provenance.handbookHash,
+      createdAt,
+    });
+    const item = ApprovalItem.safeParse({
+      id: deps.idGen(),
+      kind: 'escalation',
+      subjectId: requestId,
+      assigneeRole: 'hr_admin', // the "own" grant never applies to escalation items (rule 23)
+      flagged: false,
+      status: 'open',
+      createdAt,
+    });
+    if (!record.success || !item.success) return { kind: 'parse_error' };
+    const escalation: DispatchEscalation = failure ?? 'qa_gate';
+    return {
+      kind: 'policy_escalate',
+      question: record.data,
+      item: item.data,
+      text,
+      escalation,
+      records: {
+        ...gateParts,
+        approvalItemId: item.data.id,
+        assigneeRole: 'hr_admin',
+        flagged: false,
+        policyQuestionId: record.data.id,
+      },
+    };
+  }
+
+  /** PolicyQuestion, then item; a failed item removes the question. A throwing first insert propagates. */
+  async function writePolicyEscalation(
+    question: PolicyQuestionT,
+    item: ApprovalItemT,
+  ): Promise<WriteResult> {
+    if (!(await deps.policyQuestions.insert(question))) return { ok: false, failed: 'request' };
+    const itemWritten = await deps.approvals.insert(item).catch(() => false);
+    if (!itemWritten) {
+      await undo(() => deps.policyQuestions.remove(question.id));
+      return { ok: false, failed: 'item' };
+    }
+    return {
+      ok: true,
+      undo: async () => {
+        await undo(() => deps.approvals.remove(item.id));
+        await undo(() => deps.policyQuestions.remove(question.id));
+      },
+    };
+  }
+
   /** Request, then item; a failed item removes the request (D-13). A throwing request insert propagates. */
   async function writeRecords(leave: LeaveRequestT, item: ApprovalItemT): Promise<WriteResult> {
     if (!(await deps.leaveRequests.insert(leave))) return { ok: false, failed: 'request' };
@@ -383,5 +523,5 @@ export function createDispatcher(deps: IntakeDeps): Dispatcher {
     };
   }
 
-  return { decide, writeRecords };
+  return { decide, writeRecords, writePolicyEscalation };
 }

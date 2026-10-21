@@ -1,0 +1,92 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`policy-qa gate: the real handbook and committed policy (AT-23) > AT-23: the topics matched per section across the whole handbook are snapshotted for owner review 1`] = `
+{
+  "HB-1.1": [],
+  "HB-1.2": [],
+  "HB-1.3": [],
+  "HB-1.4": [],
+  "HB-10.1": [],
+  "HB-10.2": [
+    "compensation",
+  ],
+  "HB-10.3": [],
+  "HB-10.4": [
+    "compensation",
+  ],
+  "HB-11.1": [],
+  "HB-11.2": [],
+  "HB-11.3": [],
+  "HB-11.4": [],
+  "HB-12.1": [],
+  "HB-12.2": [],
+  "HB-12.3": [],
+  "HB-12.4": [],
+  "HB-13.1": [],
+  "HB-13.2": [
+    "disciplinary",
+  ],
+  "HB-13.3": [
+    "disciplinary",
+  ],
+  "HB-14.1": [],
+  "HB-14.2": [],
+  "HB-14.3": [],
+  "HB-14.4": [],
+  "HB-14.5": [
+    "disciplinary",
+  ],
+  "HB-15.1": [],
+  "HB-15.2": [],
+  "HB-2.1": [],
+  "HB-2.10": [],
+  "HB-2.2": [],
+  "HB-2.3": [],
+  "HB-2.4": [],
+  "HB-2.5": [],
+  "HB-2.6": [
+    "medical",
+  ],
+  "HB-2.7": [],
+  "HB-2.8": [],
+  "HB-2.9": [],
+  "HB-3.1": [],
+  "HB-3.2": [],
+  "HB-3.3": [],
+  "HB-4.1": [],
+  "HB-4.2": [],
+  "HB-4.3": [],
+  "HB-4.4": [],
+  "HB-5.1": [],
+  "HB-5.2": [],
+  "HB-5.3": [],
+  "HB-5.4": [],
+  "HB-6.1": [],
+  "HB-6.2": [],
+  "HB-6.3": [],
+  "HB-6.4": [],
+  "HB-7.1": [
+    "harassment",
+    "medical",
+  ],
+  "HB-7.2": [
+    "harassment",
+  ],
+  "HB-7.3": [
+    "harassment",
+  ],
+  "HB-7.4": [],
+  "HB-8.1": [
+    "disciplinary",
+  ],
+  "HB-8.2": [],
+  "HB-8.3": [
+    "harassment",
+  ],
+  "HB-9.1": [],
+  "HB-9.2": [
+    "medical",
+  ],
+  "HB-9.3": [],
+}
+`;

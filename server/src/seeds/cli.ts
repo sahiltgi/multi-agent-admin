@@ -5,6 +5,7 @@ import {
   ConversationModel,
   IdempotencyRecordModel,
   MessageOwnerModel,
+  PolicyQuestionModel,
 } from '../persistence/mongo/models.js';
 import { fixtures } from './fixtures.js';
 import {
@@ -28,6 +29,7 @@ const CLEARED_MODEL = {
   messageOwners: MessageOwnerModel,
   idempotencyRecords: IdempotencyRecordModel,
   conversations: ConversationModel,
+  policyQuestions: PolicyQuestionModel,
 } as const satisfies Record<SeedClearedCollection, unknown>;
 
 /** The model methods the seed needs. Docs were Zod-parsed by runSeed before they get here. */

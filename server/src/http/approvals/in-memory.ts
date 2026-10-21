@@ -1,6 +1,7 @@
 // In-memory port implementations for tests and local runs (spec approval-queue, rule 16).
 // Every read and write clones, so callers never share state with the store.
 import type { InMemoryAuditSink } from '../../agents/audit.js';
+import type { PolicyQuestionStore } from '../../domain/qa.js';
 import type {
   ApprovalItem,
   ApprovalStatus,
@@ -8,12 +9,13 @@ import type {
   Employee,
   LeaveRequest,
 } from '../../domain/schemas.js';
-import type {
-  ApprovalStore,
-  AuditReader,
-  EmployeeDirectory,
-  ResolvedSubject,
-  SubjectResolver,
+import {
+  resolveEscalation,
+  type ApprovalStore,
+  type AuditReader,
+  type EmployeeDirectory,
+  type ResolvedSubject,
+  type SubjectResolver,
 } from './ports.js';
 
 export class InMemoryEmployeeDirectory implements EmployeeDirectory {
@@ -70,17 +72,22 @@ export class InMemoryApprovalStore implements ApprovalStore {
 export class InMemorySubjectResolver implements SubjectResolver {
   private readonly byId: Map<string, LeaveRequest>;
 
-  constructor(leaves: readonly LeaveRequest[]) {
+  constructor(
+    leaves: readonly LeaveRequest[],
+    private readonly questions: PolicyQuestionStore,
+  ) {
     this.byId = new Map(leaves.map((l) => [l.id, structuredClone(l)]));
   }
 
   resolve(item: ApprovalItem): Promise<ResolvedSubject | null> {
+    if (item.kind === 'escalation') return resolveEscalation(item, this.questions);
     const leave = item.kind === 'leave_request' ? this.byId.get(item.subjectId) : undefined;
     if (leave === undefined) return Promise.resolve(null);
     return Promise.resolve({
       ownerEmployeeId: leave.employeeId,
       leave: structuredClone(leave),
       gateResult: leave.gateResult === undefined ? null : structuredClone(leave.gateResult),
+      policyQuestion: null,
     });
   }
 

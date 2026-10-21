@@ -12,6 +12,7 @@ import {
   type LeaveGateResult,
   type LeaveRequest,
 } from '../../domain/schemas.js';
+import type { PolicyQuestion, PolicyQuestionStore } from '../../domain/qa.js';
 import { fixtures } from '../../seeds/fixtures.js';
 import { createApp } from '../app.js';
 import { ErrorBody } from '../errors.js';
@@ -166,6 +167,7 @@ function traceEvents(requestId: string): AuditEvent[] {
 
 // ---- World: in-memory ports, fake clock, sequential idGen ----
 interface WorldOptions {
+  questions?: PolicyQuestion[];
   items?: ApprovalItem[];
   events?: AuditEvent[];
 }
@@ -182,7 +184,25 @@ function makeWorld(opts: WorldOptions = {}) {
   const state = { now: '2026-10-15T10:00:00Z', failWrites: false, counter: 0 };
   const directory = new InMemoryEmployeeDirectory(fixtures.employees);
   const approvals = new InMemoryApprovalStore(items);
-  const subjects = new InMemorySubjectResolver(leaves);
+  const questionMap = new Map<string, PolicyQuestion>(
+    (opts.questions ?? []).map((q) => [q.id, structuredClone(q)]),
+  );
+  const questions: PolicyQuestionStore = {
+    insert: (q) => {
+      if (questionMap.has(q.id)) return Promise.resolve(false);
+      questionMap.set(q.id, structuredClone(q));
+      return Promise.resolve(true);
+    },
+    get: (id) => {
+      const q = questionMap.get(id);
+      return Promise.resolve(q === undefined ? null : structuredClone(q));
+    },
+    remove: (id) => {
+      questionMap.delete(id);
+      return Promise.resolve();
+    },
+  };
+  const subjects = new InMemorySubjectResolver(leaves, questions);
   const auditReader = new InMemoryAuditReader(sink);
   const deps: ApprovalApiDeps = {
     directory,
@@ -196,7 +216,7 @@ function makeWorld(opts: WorldOptions = {}) {
     clock: { nowIso: () => state.now },
     idGen: () => `ae-${String(++state.counter).padStart(3, '0')}`,
   };
-  return { deps, sink, state, approvals, subjects, initialItems, initialLeaves };
+  return { deps, sink, state, approvals, subjects, questions, initialItems, initialLeaves };
 }
 type World = ReturnType<typeof makeWorld>;
 
@@ -865,7 +885,7 @@ describe('trace', () => {
     const last = events[events.length - 1];
     expect(last?.eventType).toBe('human_action');
     const gate = events.find((e) => e.eventType === 'gate_result');
-    expect(HumanActionPayload.parse(last?.payload).gateResultSeen.policyHash).toBe(
+    expect(HumanActionPayload.parse(last?.payload).gateResultSeen?.policyHash).toBe(
       gate?.payload.policyHash,
     );
   });
@@ -880,6 +900,38 @@ describe('trace', () => {
       expect(res.text).not.toContain(G.policyHash);
       expect(res.text).not.toContain('synthetic step');
     }
+  });
+
+  it('policy-qa AT-53: a leave trace is unchanged for its owner (gate result and decision shown)', async () => {
+    const w = makeWorld();
+    const { call, act } = await boot(w);
+    expect((await act('emp-002', 'ai-001', 'approve', G)).status).toBe(200);
+    const res = await call('emp-003', 'GET', '/audit/lr-101');
+    expect(res.status).toBe(200);
+    const types = TraceResponse.parse(res.body).events.map((e) => e.eventType);
+    expect(types).toContain('gate_result');
+    expect(types).toContain('human_action');
+  });
+
+  it('policy-qa: HumanActionPayload has gateResultSeen null exactly for resolve', () => {
+    const base = {
+      itemId: 'ai-050',
+      itemKind: 'escalation',
+      actorRole: 'hr_admin',
+      comment: 'c',
+      statusBefore: 'open',
+    };
+    const resolve = { ...base, action: 'resolve', statusAfter: 'resolved' };
+    const approve = {
+      ...base,
+      itemKind: 'leave_request',
+      action: 'approve',
+      statusAfter: 'approved',
+    };
+    expect(HumanActionPayload.safeParse({ ...resolve, gateResultSeen: null }).success).toBe(true);
+    expect(HumanActionPayload.safeParse({ ...resolve, gateResultSeen: G }).success).toBe(false);
+    expect(HumanActionPayload.safeParse({ ...approve, gateResultSeen: G }).success).toBe(true);
+    expect(HumanActionPayload.safeParse({ ...approve, gateResultSeen: null }).success).toBe(false);
   });
 
   it('AT-24: hr_admin, owner and the owner manager read; other managers get 404', async () => {
@@ -962,5 +1014,219 @@ describe('pii and determinism', () => {
     const second = await runSequence();
     expect(first.events.length).toBeGreaterThan(6);
     expect(second).toEqual(first);
+  });
+});
+
+// ---- specs/policy-qa.md: AT-46 to AT-49, AT-51 (HTTP part) ----
+const QA_NOW = '2026-10-19T09:00:00Z';
+const qaGate = {
+  verdict: 'ESCALATE_TO_HR',
+  ruleResults: [
+    { ruleId: 'citations_present', passed: true, expected: 'e', actual: 'a', message: 'm' },
+    { ruleId: 'citations_verbatim', passed: true, expected: 'e', actual: 'a', message: 'm' },
+    { ruleId: 'topic_not_sensitive', passed: false, expected: 'e', actual: 'a', message: 'm' },
+  ],
+  reason: 'Escalated to HR.',
+  policyVersion: 'v1',
+  policyHash: 'a'.repeat(64),
+  sectionIds: ['HB-1.2'],
+};
+const RAW_Q = 'Who do I tell about bullying by a colleague? Reach me at alex.doe@corp.example';
+const DRAFT = 'You get 10 sick days per year.';
+function mkQuestion(id: string, employeeId: string): PolicyQuestion {
+  return {
+    id,
+    employeeId,
+    question: RAW_Q,
+    draftAnswer: DRAFT,
+    escalation: 'gate',
+    gateResult: qaGate,
+    policyVersion: 'v1',
+    policyHash: 'a'.repeat(64),
+    handbookHash: 'b'.repeat(64),
+    createdAt: QA_NOW,
+  } as PolicyQuestion;
+}
+function mkEsc(id: string, subjectId: string): ApprovalItem {
+  return { ...mkItem(id, subjectId, 'hr_admin', undefined, false, QA_NOW), kind: 'escalation' };
+}
+function qaWorld(extraItems: ApprovalItem[] = [], extraQs: PolicyQuestion[] = []) {
+  const w = makeWorld({
+    items: [...fixtureItems(), mkEsc('ai-050', 'r-001'), mkEsc('ai-051', 'r-002'), ...extraItems],
+    questions: [mkQuestion('r-001', 'emp-004'), mkQuestion('r-002', 'emp-004'), ...extraQs],
+    events: [],
+  });
+  w.state.now = QA_NOW;
+  return w;
+}
+const resolveBody = (comment?: string, extra: Record<string, unknown> = {}) => ({
+  action: 'resolve',
+  ...(comment === undefined ? {} : { comment }),
+  ...extra,
+});
+
+describe('policy-qa AT-46: the subject resolver and the item view', () => {
+  it('AT-46: an escalation item resolves to its PolicyQuestion, or null when none exists', async () => {
+    const w = qaWorld([mkEsc('ai-052', 'r-999')]);
+    const item = await w.approvals.get('ai-050');
+    if (item === null) throw new Error('missing item');
+    expect(await w.subjects.resolve(item)).toEqual({
+      ownerEmployeeId: 'emp-004',
+      leave: null,
+      gateResult: null,
+      policyQuestion: mkQuestion('r-001', 'emp-004'),
+    });
+    const orphan = await w.approvals.get('ai-052');
+    if (orphan === null) throw new Error('missing item');
+    expect(await w.subjects.resolve(orphan)).toBeNull();
+    const leaveItem = await w.approvals.get('ai-001');
+    if (leaveItem === null) throw new Error('missing item');
+    const leave = await w.subjects.resolve(leaveItem);
+    expect(leave?.policyQuestion).toBeNull();
+    expect(leave?.leave?.id).toBe('lr-101');
+    expect(await w.subjects.isLeaveRequest('r-001')).toBe(false);
+  });
+
+  it('AT-46: hr_admin sees the question view; leave items have question null', async () => {
+    const w = qaWorld();
+    const { call } = await boot(w);
+    const res = await call('emp-001', 'GET', '/approvals');
+    const list = ListApprovalsResponse.parse(res.body);
+    const esc = list.items.find((i) => i.item.id === 'ai-050');
+    expect(esc?.canAct).toBe(true);
+    expect(esc?.subject).toBeNull();
+    expect(esc?.gateResult).toBeNull();
+    expect(esc?.question).toMatchObject({
+      questionId: 'r-001',
+      employeeId: 'emp-004',
+      question: RAW_Q,
+      draftAnswer: DRAFT,
+      escalation: 'gate',
+    });
+    const one = GetApprovalResponse.parse((await call('emp-001', 'GET', '/approvals/ai-050')).body);
+    expect(one.question?.question).toBe(RAW_Q);
+    const leaveView = GetApprovalResponse.parse(
+      (await call('emp-002', 'GET', '/approvals/ai-001')).body,
+    );
+    expect(leaveView.question).toBeNull();
+  });
+
+  it('AT-46: the asker and the asker manager do not see the escalation item', async () => {
+    const w = qaWorld();
+    const { call } = await boot(w);
+    for (const user of ['emp-004', 'emp-002', 'emp-005']) {
+      expect(listIds(await call(user, 'GET', '/approvals')), user).not.toContain('ai-050');
+      expectError(await call(user, 'GET', '/approvals/ai-050'), 404, 'not_found');
+    }
+  });
+});
+
+describe('policy-qa AT-47: resolve', () => {
+  const url = '/approvals/ai-050/actions';
+
+  it('AT-47: hr_admin resolves an escalation with a redacted comment and one human_action event', async () => {
+    const w = qaWorld();
+    const { call } = await boot(w);
+    const before = structuredClone(await w.questions.get('r-001'));
+    const comment = 'Replied by email (synthetic). Contact: alex.doe@corp.example';
+    const res = await call('emp-001', 'POST', url, resolveBody(comment));
+    expect(res.status).toBe(200);
+    const { item } = ActionResponse.parse(res.body);
+    expect(item.status).toBe('resolved');
+    expect(item.decision).toMatchObject({
+      action: 'resolve',
+      byEmployeeId: 'emp-001',
+      at: QA_NOW,
+    });
+    expect(item.decision?.comment).toContain('[EMAIL]');
+    expect(item.decision?.comment).not.toContain('alex.doe@corp.example');
+    const events = humanEvents(w);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.traceId).toBe('r-001');
+    expect(HumanActionPayload.parse(events[0]?.payload)).toMatchObject({
+      action: 'resolve',
+      statusBefore: 'open',
+      statusAfter: 'resolved',
+      gateResultSeen: null,
+    });
+    expect(await w.questions.get('r-001')).toEqual(before);
+  });
+
+  it('AT-47: repeat, missing comment, seen key, wrong kind and wrong users change nothing', async () => {
+    const w = qaWorld();
+    const { call } = await boot(w);
+    expect((await call('emp-001', 'POST', url, resolveBody('Done (synthetic)'))).status).toBe(200);
+    const events = w.sink.events.length;
+    const snapshot = structuredClone(await w.approvals.list());
+    expectError(await call('emp-001', 'POST', url, resolveBody('Again')), 409, 'already_decided');
+    const url2 = '/approvals/ai-051/actions';
+    expectError(await call('emp-001', 'POST', url2, resolveBody()), 400, 'comment_required');
+    expectError(await call('emp-001', 'POST', url2, resolveBody('   ')), 400, 'comment_required');
+    expectError(
+      await call('emp-001', 'POST', url2, resolveBody('ok', { seen: seenOf(G) })),
+      400,
+      'invalid_request',
+    );
+    expectError(
+      await call('emp-002', 'POST', '/approvals/ai-001/actions', resolveBody('x')),
+      409,
+      'action_not_allowed',
+    );
+    expectError(await call('emp-002', 'POST', url2, resolveBody('x')), 404, 'not_found');
+    expectError(await call('emp-004', 'POST', url2, resolveBody('x')), 404, 'not_found');
+    expect(w.sink.events.length).toBe(events);
+    expect(await w.approvals.list()).toEqual(snapshot);
+  });
+
+  it('AT-47: a comment of exactly 1000 characters is accepted and 1001 is invalid_request', async () => {
+    const w = qaWorld();
+    const { call } = await boot(w);
+    expectError(
+      await call('emp-001', 'POST', url, resolveBody('x'.repeat(1001))),
+      400,
+      'invalid_request',
+    );
+    expect((await call('emp-001', 'POST', url, resolveBody('x'.repeat(1000)))).status).toBe(200);
+  });
+
+  it('AT-48: approve, reject and comment stay closed on an escalation item', async () => {
+    const w = qaWorld();
+    const { act } = await boot(w);
+    const events = w.sink.events.length;
+    for (const action of ['approve', 'reject', 'comment'] as const) {
+      expectError(await act('emp-001', 'ai-050', action, G, 'note'), 409, 'gate_result_missing');
+    }
+    expect((await w.approvals.get('ai-050'))?.status).toBe('open');
+    expect(w.sink.events.length).toBe(events);
+  });
+
+  it('AT-49: hr_admin cannot resolve their own question', async () => {
+    const w = qaWorld([mkEsc('ai-060', 'r-010')], [mkQuestion('r-010', 'emp-001')]);
+    const { call } = await boot(w);
+    const list = ListApprovalsResponse.parse((await call('emp-001', 'GET', '/approvals')).body);
+    expect(list.items.find((i) => i.item.id === 'ai-060')?.canAct).toBe(false);
+    const events = w.sink.events.length;
+    expectError(
+      await call('emp-001', 'POST', '/approvals/ai-060/actions', resolveBody('mine')),
+      403,
+      'self_action_forbidden',
+    );
+    expect((await w.approvals.get('ai-060'))?.status).toBe('open');
+    expect(w.sink.events.length).toBe(events);
+  });
+});
+
+describe('policy-qa AT-51: HTTP schemas', () => {
+  it('AT-51: GET /approvals?status=resolved parses and action_not_allowed is a 409 error code', async () => {
+    const w = qaWorld();
+    const { call } = await boot(w);
+    const res = await call('emp-001', 'GET', '/approvals?status=resolved');
+    expect(res.status).toBe(200);
+    expect(ListApprovalsResponse.parse(res.body).items).toEqual([]);
+    const { ErrorCode, HttpError, errorBody } = await import('../errors.js');
+    expect(ErrorCode.safeParse('action_not_allowed').success).toBe(true);
+    const code = ErrorCode.parse('action_not_allowed');
+    expect(new HttpError(code).status).toBe(409);
+    expect(errorBody(code).error.message).toBe("This action isn't available for this item.");
   });
 });

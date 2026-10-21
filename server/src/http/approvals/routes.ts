@@ -1,5 +1,6 @@
 // Approval queue routes (spec approval-queue, rules 5–14). The API records human decisions next
 // to a gate result that already exists; it never computes or changes a verdict (HARD RULE 1).
+import type { PolicyQuestion } from '../../domain/qa.js';
 import {
   ApprovalItem,
   AuditEvent,
@@ -26,6 +27,7 @@ import {
   TraceResponse,
   type ApprovalItemView,
   type LeaveSubjectView,
+  type PolicyQuestionView,
 } from './schemas.js';
 
 interface Loaded {
@@ -52,11 +54,30 @@ function subjectView(leave: LeaveRequest): LeaveSubjectView {
   };
 }
 
+function questionView(q: PolicyQuestion): PolicyQuestionView {
+  return {
+    questionId: q.id,
+    employeeId: q.employeeId,
+    question: q.question,
+    draftAnswer: q.draftAnswer,
+    escalation: q.escalation,
+    gateResult: q.gateResult,
+    policyVersion: q.policyVersion,
+    policyHash: q.policyHash,
+    handbookHash: q.handbookHash,
+    createdAt: q.createdAt,
+  };
+}
+
 function viewOf(actor: Actor, { ctx, resolved }: Loaded): ApprovalItemView {
   return {
     item: ctx.item,
     subject: resolved?.leave == null ? null : subjectView(resolved.leave),
     gateResult: resolved?.gateResult ?? null,
+    question:
+      ctx.item.kind === 'escalation' && resolved?.policyQuestion != null
+        ? questionView(resolved.policyQuestion)
+        : null,
     canAct: actDenial(actor, ctx) === null,
   };
 }
@@ -68,6 +89,22 @@ async function loadVisible(deps: ApprovalApiDeps, actor: Actor, itemId: string):
   const loaded = await load(deps, item);
   if (!canSee(actor, loaded.ctx)) throw new HttpError('not_found');
   return loaded;
+}
+
+/**
+ * spec policy-qa DD-24 (rule 23): what a reader who isn't hr_admin gets from a trace. Keyed on
+ * event content, so it holds even when no PolicyQuestion was kept. The Q&A gate result (verdict,
+ * topic names) and HR's actions on escalation items are dropped, and the per-turn qaVerdict is
+ * masked. Leave gate results and leave decisions are unchanged.
+ */
+function askerView(e: AuditEvent): AuditEvent[] {
+  const p = e.payload;
+  if (p.kind === 'qa_gate_result') return [];
+  if (e.eventType === 'human_action' && p.itemKind === 'escalation') return [];
+  if ((p.kind === 'intake_outcome' || p.kind === 'chat_turn') && 'qaVerdict' in p) {
+    return [{ ...e, payload: { ...p, qaVerdict: null } }];
+  }
+  return [e];
 }
 
 function byCreatedAtThenId(a: ApprovalItemView, b: ApprovalItemView): number {
@@ -125,6 +162,7 @@ export function createApprovalRoutes(deps: ApprovalApiDeps): RouteDefinition[] {
       const denial = actDenial(actor, ctx);
       if (denial !== null) throw new HttpError(denial);
       const { item } = ctx;
+      if (body.action === 'resolve') return resolveItem(actor, item, body.comment);
       const decides = body.action !== 'comment';
       if (decides && item.status !== 'open') throw new HttpError('already_decided');
 
@@ -188,6 +226,59 @@ export function createApprovalRoutes(deps: ApprovalApiDeps): RouteDefinition[] {
     },
   });
 
+  /**
+   * spec policy-qa, rule 28 (after approval-queue rule 6 steps 1-6): only an open escalation
+   * item, with a comment. It closes the item; it approves nothing and edits no employee record.
+   */
+  async function resolveItem(
+    actor: Actor,
+    item: ApprovalItem,
+    rawComment: string | undefined,
+  ): Promise<{ item: ApprovalItem; auditEventId: string }> {
+    if (item.kind !== 'escalation') throw new HttpError('action_not_allowed');
+    // Comments are data, never instructions; stored and audited redacted (rules 8, 12, 15).
+    const comment =
+      rawComment === undefined || rawComment === '' ? undefined : redactText(rawComment);
+    if (comment === undefined) throw new HttpError('comment_required');
+    if (item.status !== 'open') throw new HttpError('already_decided');
+
+    const at = deps.clock.nowIso();
+    // Both records are built and parsed before any write, so a parse failure changes nothing.
+    const event = AuditEvent.parse({
+      id: deps.idGen(),
+      traceId: item.subjectId,
+      at,
+      actor: { kind: 'human', id: actor.employeeId },
+      eventType: 'human_action',
+      payload: HumanActionPayload.parse({
+        itemId: item.id,
+        itemKind: item.kind,
+        action: 'resolve',
+        actorRole: actor.role,
+        comment,
+        statusBefore: 'open',
+        statusAfter: 'resolved',
+        gateResultSeen: null,
+      }),
+    });
+    const saved = ApprovalItem.parse({
+      ...item,
+      status: 'resolved',
+      decision: { action: 'resolve', byEmployeeId: actor.employeeId, comment, at },
+    });
+    if (!(await deps.approvals.saveIfStatus(saved, 'open'))) {
+      throw new HttpError('already_decided');
+    }
+    try {
+      await deps.audit.write(event);
+    } catch {
+      // Never leave a resolve applied and unaudited (approval-queue rule 12): restore, then 500.
+      await deps.approvals.saveIfStatus(item, 'resolved').catch(() => false);
+      throw new HttpError('internal_error');
+    }
+    return { item: saved, auditEventId: event.id };
+  }
+
   const trace = defineRoute({
     method: 'get',
     path: '/audit/:requestId',
@@ -202,9 +293,9 @@ export function createApprovalRoutes(deps: ApprovalApiDeps): RouteDefinition[] {
       // A denied read looks the same as an unknown request (OQ-1).
       const isLeave = await deps.subjects.isLeaveRequest(params.requestId);
       if (!canReadTrace(actor, owner, isLeave)) throw new HttpError('not_found');
-      const events = (await deps.auditReader.listByTrace(params.requestId)).map((e) =>
-        AuditEvent.parse(e),
-      );
+      const events = (await deps.auditReader.listByTrace(params.requestId))
+        .map((e) => AuditEvent.parse(e))
+        .flatMap((e) => (actor.role === 'hr_admin' ? [e] : askerView(e)));
       // Array sort is stable, so events at the same instant keep insertion order.
       events.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
       return { requestId: params.requestId, events };

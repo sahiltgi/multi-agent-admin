@@ -1,0 +1,97 @@
+# QA sensitive-topics policy v1 (spec policy-qa, rule 3; lists from DD-6a). Synthetic.
+# Validated by QaPolicyV1 in server/src/gate/qa-policy.schema.ts; any change here must change
+# tests or evals in the same commit (HARD RULE 5). Changing even a comment changes policyHash.
+# Matching is case-insensitive, on word boundaries, over the question and the whole answer.
+# No list holds bare medical, pay, doctor, note, sick, illness, leave, absence, court, raise or
+# warning, so ordinary handbook answers (e.g. HB-2.2 sick leave) still auto-answer. Known
+# collisions (HB-10.2 "salary", HB-2.6 "pregnancy", HB-9.2 "disability") escalate by design (DD-11).
+version: v1
+sensitiveTopics:
+  harassment:
+    - harassment
+    - harassed
+    - harassing
+    - bullying
+    - bullied
+    - sexual misconduct
+    - hostile work environment
+    - discrimination
+    - discriminated
+    - discriminatory
+    - victimisation
+    - victimization
+    - retaliation
+    - assault
+    - assaulted
+    - stalking
+  medical:
+    - diagnosis
+    - diagnosed
+    - medication
+    - prescription
+    - mental health
+    - therapy
+    - therapist
+    - psychiatrist
+    - surgery
+    - chronic condition
+    - long-term condition
+    - chronic illness
+    - disability
+    - disabled
+    - pregnancy
+    - pregnant
+    - miscarriage
+    - cancer
+    - depression
+  disciplinary:
+    - disciplinary
+    - discipline
+    - misconduct
+    - gross misconduct
+    - written warning
+    - verbal warning
+    - final warning
+    - performance improvement plan
+    - dismissal
+    - dismissed
+    - fired
+    - sacked
+    - suspension
+    - suspended
+    - grievance
+  compensation:
+    - salary
+    - salaries
+    - pay rise
+    - pay raise
+    - pay increase
+    - salary increase
+    - salary review
+    - bonus
+    - bonuses
+    - compensation
+    - commission
+    - stock options
+    - equity
+    - pay grade
+    - pay band
+  legal:
+    - lawyer
+    - lawyers
+    - attorney
+    - solicitor
+    - lawsuit
+    - sue
+    - suing
+    - sued
+    - legal action
+    - legal advice
+    - tribunal
+    - employment tribunal
+    - litigation
+    - court case
+    - take to court
+    - settlement agreement
+    - whistleblowing
+    - whistleblower

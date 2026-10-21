@@ -1,7 +1,12 @@
 // LeaveRequestStore and SubjectResolver on MongoDB, in one adapter so requests created by intake
 // reach the approval queue (spec mongo-persistence, rules 4 and 5; request-intake D-2, D-9).
+import type { PolicyQuestionStore } from '../../domain/qa.js';
 import { LeaveRequest, type ApprovalItem } from '../../domain/schemas.js';
-import type { ResolvedSubject, SubjectResolver } from '../../http/approvals/ports.js';
+import {
+  resolveEscalation,
+  type ResolvedSubject,
+  type SubjectResolver,
+} from '../../http/approvals/ports.js';
 import type { LeaveRequestStore } from '../../intake/ports.js';
 import { MODELS } from '../../models/index.js';
 import { MessageOwner, MessageOwnerModel } from './models.js';
@@ -10,6 +15,9 @@ import { isDuplicateKey, literal, NO_STORAGE_KEYS, parseAllStored, parseStored }
 const COLLECTION = 'leaveRequests';
 
 export class MongoLeaveRequestStore implements LeaveRequestStore, SubjectResolver {
+  /** `questions` resolves escalation items (spec policy-qa, rule 23); without it they give null. */
+  constructor(private readonly questions: PolicyQuestionStore | null = null) {}
+
   private async byId(id: string): Promise<LeaveRequest | null> {
     const doc = await MODELS.LeaveRequest.findOne({ id: literal(id) }, NO_STORAGE_KEYS)
       .lean()
@@ -63,6 +71,9 @@ export class MongoLeaveRequestStore implements LeaveRequestStore, SubjectResolve
   }
 
   async resolve(item: ApprovalItem): Promise<ResolvedSubject | null> {
+    if (item.kind === 'escalation') {
+      return this.questions === null ? null : resolveEscalation(item, this.questions);
+    }
     if (item.kind !== 'leave_request') return null; // approval-queue OQ-6: fail closed
     const leave = await this.byId(item.subjectId);
     if (leave === null) return null;
@@ -70,6 +81,7 @@ export class MongoLeaveRequestStore implements LeaveRequestStore, SubjectResolve
       ownerEmployeeId: leave.employeeId,
       leave,
       gateResult: leave.gateResult ?? null,
+      policyQuestion: null,
     };
   }
 

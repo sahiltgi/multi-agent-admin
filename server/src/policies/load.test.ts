@@ -1,12 +1,19 @@
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stringify } from 'yaml';
 import { LoadedLeavePolicy } from '../gate/leave-policy.schema.js';
-import { PolicyLoadError, loadLeavePolicy } from './load.js';
+import { PolicyLoadError, loadLeavePolicy, loadQaPolicy } from './load.js';
 
 type Json = Record<string, unknown>;
 type Path = (string | number)[];
@@ -459,3 +466,185 @@ describe('loadLeavePolicy', () => {
     expect(r.policy).toEqual(expected);
   });
 });
+
+// ---- specs/policy-qa.md AT-3: loadQaPolicy ----
+const QA_COMMITTED = fileURLToPath(new URL('../../../policies/qa/v1.yaml', import.meta.url));
+const QA_TOPICS = {
+  harassment: [
+    'harassment',
+    'harassed',
+    'harassing',
+    'bullying',
+    'bullied',
+    'sexual misconduct',
+    'hostile work environment',
+    'discrimination',
+    'discriminated',
+    'discriminatory',
+    'victimisation',
+    'victimization',
+    'retaliation',
+    'assault',
+    'assaulted',
+    'stalking',
+  ],
+  medical: [
+    'diagnosis',
+    'diagnosed',
+    'medication',
+    'prescription',
+    'mental health',
+    'therapy',
+    'therapist',
+    'psychiatrist',
+    'surgery',
+    'chronic condition',
+    'long-term condition',
+    'chronic illness',
+    'disability',
+    'disabled',
+    'pregnancy',
+    'pregnant',
+    'miscarriage',
+    'cancer',
+    'depression',
+  ],
+  disciplinary: [
+    'disciplinary',
+    'discipline',
+    'misconduct',
+    'gross misconduct',
+    'written warning',
+    'verbal warning',
+    'final warning',
+    'performance improvement plan',
+    'dismissal',
+    'dismissed',
+    'fired',
+    'sacked',
+    'suspension',
+    'suspended',
+    'grievance',
+  ],
+  compensation: [
+    'salary',
+    'salaries',
+    'pay rise',
+    'pay raise',
+    'pay increase',
+    'salary increase',
+    'salary review',
+    'bonus',
+    'bonuses',
+    'compensation',
+    'commission',
+    'stock options',
+    'equity',
+    'pay grade',
+    'pay band',
+  ],
+  legal: [
+    'lawyer',
+    'lawyers',
+    'attorney',
+    'solicitor',
+    'lawsuit',
+    'sue',
+    'suing',
+    'sued',
+    'legal action',
+    'legal advice',
+    'tribunal',
+    'employment tribunal',
+    'litigation',
+    'court case',
+    'take to court',
+    'settlement agreement',
+    'whistleblowing',
+    'whistleblower',
+  ],
+};
+
+describe('policy-qa AT-3: loadQaPolicy', () => {
+  it('AT-3: the committed policies/qa/v1.yaml loads with the DD-6a phrases and a byte hash', async () => {
+    expect(existsSync(QA_COMMITTED)).toBe(true);
+    const { LoadedQaPolicy } = await import('../gate/qa-policy.schema.js');
+    const r = loadQaPolicy(QA_COMMITTED);
+    expect(LoadedQaPolicy.safeParse(r).success).toBe(true);
+    expect(r.policyVersion).toBe('v1');
+    expect(Object.keys(r.policy.sensitiveTopics).sort()).toEqual(Object.keys(QA_TOPICS).sort());
+    expect(r.policy.sensitiveTopics).toEqual(QA_TOPICS);
+    expect(r.policyHash).toBe(sha(readFileSync(QA_COMMITTED)));
+  });
+
+  it('AT-3: invalid copies are rejected with PolicyLoadError naming the path, never the values', () => {
+    expect(existsSync(QA_COMMITTED)).toBe(true);
+    const base = (): Json => structuredClone(QA_BASE());
+    const topics = (o: Json): Json => o.sensitiveTopics as Json;
+    const variants: [string, (o: Json) => void][] = [
+      [
+        'missing topic',
+        (o) => {
+          delete topics(o).legal;
+        },
+      ],
+      [
+        'extra topic',
+        (o) => {
+          topics(o).politics = ['election'];
+        },
+      ],
+      [
+        'empty list',
+        (o) => {
+          topics(o).legal = [];
+        },
+      ],
+      [
+        'uppercase',
+        (o) => {
+          topics(o).compensation = ['Salary'];
+        },
+      ],
+      [
+        'regex',
+        (o) => {
+          topics(o).compensation = ['pay.*'];
+        },
+      ],
+      [
+        'duplicate',
+        (o) => {
+          topics(o).legal = ['lawyer', 'lawyer'];
+        },
+      ],
+      [
+        'version v2',
+        (o) => {
+          o.version = 'v2';
+        },
+      ],
+    ];
+    for (const [name, mutate] of variants) {
+      const o = base();
+      mutate(o);
+      const file = fixture(stringify(o));
+      let caught: unknown;
+      try {
+        loadQaPolicy(file);
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught, name).toBeInstanceOf(PolicyLoadError);
+      const err = caught as PolicyLoadError;
+      expect(err.filePath, name).toBe(file);
+      expect(err.message, name).toContain(file);
+      expect(err.message, name).not.toContain('Salary');
+      expect(err.message, name).not.toContain('pay.*');
+    }
+  });
+});
+
+function QA_BASE(): Json {
+  return { version: 'v1', sensitiveTopics: QA_TOPICS };
+}

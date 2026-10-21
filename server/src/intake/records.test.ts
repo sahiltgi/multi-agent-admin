@@ -203,6 +203,35 @@ function makeWorld(opts: WorldOptions = {}) {
     runLeave,
     texts: new InMemoryIntakeTexts({ ...TEXTS, ...opts.texts }),
     idempotency: new InMemoryIdempotencyStore(),
+    // policy-qa amendment: policy_qa runs the Q&A agent; a plain AUTO_ANSWER result stands in for it.
+    runPolicyQa: () =>
+      Promise.resolve({
+        kind: 'gated',
+        requestId: 'lr-001',
+        gate: {
+          verdict: 'AUTO_ANSWER',
+          ruleResults: ['citations_present', 'citations_verbatim', 'topic_not_sensitive'].map(
+            (ruleId) => ({ ruleId, passed: true, expected: 'e', actual: 'a', message: 'm' }),
+          ),
+          reason: 'All checks passed.',
+          policyVersion: 'v1',
+          policyHash: 'a'.repeat(64),
+          sectionIds: ['HB-1.2'],
+        },
+        answerText: 'You get 10 sick days per year.',
+        provenance: {
+          policyVersion: 'v1',
+          policyHash: 'a'.repeat(64),
+          handbookHash: 'b'.repeat(64),
+        },
+        injectionSuspected: false,
+      } as unknown as Awaited<ReturnType<IntakeDeps['runPolicyQa']>>),
+    policyQuestions: {
+      insert: () => Promise.resolve(true),
+      get: () => Promise.resolve(null),
+      remove: () => Promise.resolve(),
+    },
+    qaTexts: { load: () => Promise.resolve('QA-ESCALATED-FIXTURE') },
   };
   const approvalDeps: ApprovalApiDeps = {
     directory,

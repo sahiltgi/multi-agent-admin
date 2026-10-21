@@ -4,6 +4,7 @@ import mongoose, { type Model } from 'mongoose';
 import type { AuditSink } from '../../agents/audit.js';
 import type { ConversationStore } from '../../chat/ports.js';
 import type { LeaveDataPort } from '../../agents/leave/port.js';
+import type { PolicyQuestionStore } from '../../domain/qa.js';
 import type {
   ApprovalStore,
   AuditReader,
@@ -23,7 +24,13 @@ import { MongoEmployeeDirectory } from './directory.js';
 import { MongoIdempotencyStore } from './idempotency.js';
 import { MongoLeaveDataPort } from './leave-data.js';
 import { MongoLeaveRequestStore } from './leave-requests.js';
-import { ConversationModel, IdempotencyRecordModel, MessageOwnerModel } from './models.js';
+import {
+  ConversationModel,
+  IdempotencyRecordModel,
+  MessageOwnerModel,
+  PolicyQuestionModel,
+} from './models.js';
+import { MongoPolicyQuestionStore } from './policy-questions.js';
 
 export interface ServerStores {
   directory: EmployeeDirectory;
@@ -33,6 +40,7 @@ export interface ServerStores {
   idempotency: IdempotencyStore;
   leaveData: LeaveDataPort;
   conversations: ConversationStore; // chat-endpoint rule 25
+  policyQuestions: PolicyQuestionStore; // spec policy-qa, rule 26
 }
 
 export interface MongoHandle {
@@ -55,6 +63,7 @@ const ALL_MODELS: readonly Model<never>[] = [
   MessageOwnerModel,
   IdempotencyRecordModel,
   ConversationModel,
+  PolicyQuestionModel,
 ] as unknown as readonly Model<never>[];
 
 // The unique indexes rules 3–7 rely on. Startup refuses to serve without them (D-4).
@@ -66,6 +75,7 @@ const REQUIRED_UNIQUE: readonly { model: Model<never>; key: string }[] = [
   { model: MessageOwnerModel as unknown as Model<never>, key: 'requestId' },
   { model: IdempotencyRecordModel as unknown as Model<never>, key: 'employeeId,key' },
   { model: ConversationModel as unknown as Model<never>, key: 'id' },
+  { model: PolicyQuestionModel as unknown as Model<never>, key: 'id' },
 ];
 
 async function assertUniqueIndexes(): Promise<void> {
@@ -80,14 +90,16 @@ async function assertUniqueIndexes(): Promise<void> {
 }
 
 function stores(): ServerStores {
+  const policyQuestions = new MongoPolicyQuestionStore();
   return {
     directory: new MongoEmployeeDirectory(),
     approvals: new MongoApprovalStore(),
-    leaveRequests: new MongoLeaveRequestStore(),
+    leaveRequests: new MongoLeaveRequestStore(policyQuestions), // also the subject resolver
     audit: new MongoAuditStore(),
     idempotency: new MongoIdempotencyStore(),
     leaveData: new MongoLeaveDataPort(),
     conversations: new MongoConversationStore(),
+    policyQuestions,
   };
 }
 

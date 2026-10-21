@@ -32,7 +32,11 @@ function deps(): ApprovalApiDeps {
   return {
     directory: new InMemoryEmployeeDirectory(fixtures.employees),
     approvals: new InMemoryApprovalStore([]),
-    subjects: new InMemorySubjectResolver([]),
+    subjects: new InMemorySubjectResolver([], {
+      insert: () => Promise.resolve(true),
+      get: () => Promise.resolve(null),
+      remove: () => Promise.resolve(),
+    }),
     audit: sink,
     auditReader: new InMemoryAuditReader(sink),
     clock: { nowIso: () => '2026-10-15T10:00:00Z' },

@@ -5,6 +5,7 @@
 import { z } from 'zod';
 import { ClarifyingQuestion, RouteLabel } from '../agents/orchestrator/schemas.js';
 import { MAX_USER_TEXT_CHARS } from '../agents/schemas.js';
+import { QaVerdict, SectionId } from '../domain/qa.js';
 import { Id, IsoDateTime, LeaveVerdict, Role } from '../domain/schemas.js';
 import { DispatchEscalation, FailedRule, MyRequestView } from '../intake/schemas.js';
 
@@ -25,6 +26,8 @@ export const ChatStatus = z.enum([
   'leave_returned',
   'escalated',
   'retry', // model_unavailable only (rule 17)
+  'answered', // a gate-approved policy answer (spec policy-qa, rule 20)
+  'escalated_to_hr', // a policy question passed to HR, with a PolicyQuestion and item (rule 21)
 ]);
 export type ChatStatus = z.infer<typeof ChatStatus>;
 
@@ -38,15 +41,18 @@ export const ChatCard = z.discriminatedUnion('kind', [
     })
     .strict(),
   z.object({ kind: z.literal('returned'), failedRules: z.array(FailedRule) }).strict(),
+  // spec policy-qa, rule 20: the section ids are copied from the Q&A gate output
+  z.object({ kind: z.literal('policy_answer'), sectionIds: z.array(SectionId).min(1) }).strict(),
 ]); // never the RecommendationCard: no summary, policyHash, model or promptVersion
 export type ChatCard = z.infer<typeof ChatCard>;
 
 const CARD_KIND_FOR_STATUS: Partial<Record<ChatStatus, ChatCard['kind']>> = {
   leave_submitted: 'submitted',
   leave_returned: 'returned',
+  answered: 'policy_answer',
 };
 
-/** A card is present iff the status is leave_submitted or leave_returned, of the matching kind. */
+/** A card is present iff the status maps to a card kind, and it is of that kind. */
 function cardMatchesStatus(r: { status: ChatStatus; card?: ChatCard | undefined }): boolean {
   const expected = CARD_KIND_FOR_STATUS[r.status];
   return expected === undefined ? r.card === undefined : r.card?.kind === expected;
@@ -167,7 +173,9 @@ export const ChatTurnPayload = z
     verdict: LeaveVerdict.nullable(), // copied from the card
     policyVersion: z.string().nullable(), // copied from the card
     policyHash: z.string().nullable(), // copied from the card; unredacted (leave-agent D-16)
-    injectionSuspected: z.boolean(), // OR over every Leave run in the turn
+    qaVerdict: QaVerdict.nullable(), // copied from the Q&A gate (spec policy-qa, rule 25)
+    policyQuestionId: Id.nullable(),
+    injectionSuspected: z.boolean(), // OR over every agent run in the turn
   })
   .strict(); // no user text, reply, draft, question or reason
 export type ChatTurnPayload = z.infer<typeof ChatTurnPayload>;

@@ -29,6 +29,7 @@ export const SEED_CLEARED = [
   'messageOwners',
   'idempotencyRecords',
   'conversations', // chat-endpoint D-7: card snapshots would point at deleted requests
+  'policyQuestions', // spec policy-qa, rule 26: their escalation items are cleared too
 ] as const;
 export type SeedClearedCollection = (typeof SEED_CLEARED)[number];
 
