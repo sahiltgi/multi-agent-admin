@@ -16,6 +16,8 @@ export const ErrorCode = z.enum([
   'idempotency_conflict', // request-intake D-11
   'conversation_conflict', // chat-endpoint D-4
   'conversation_full', // chat-endpoint D-7
+  'dependencies_incomplete', // spec onboarding, rule 24 (OQ-5)
+  'already_done', // spec onboarding, rule 24
   'internal_error',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
@@ -59,6 +61,8 @@ const ERRORS: Record<ErrorCode, { status: number; message: string }> = {
       'This conversation changed while your message was being handled. Please reload and try again.',
   },
   conversation_full: { status: 409, message: 'This conversation is full. Please start a new one.' },
+  dependencies_incomplete: { status: 409, message: "This task's dependencies aren't done yet." },
+  already_done: { status: 409, message: 'This task is already done.' },
   internal_error: { status: 500, message: 'Something went wrong.' },
 };
 

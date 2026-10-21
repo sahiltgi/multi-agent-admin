@@ -13,6 +13,7 @@ import {
   type LeaveRequest,
 } from '../../domain/schemas.js';
 import type { PolicyQuestion, PolicyQuestionStore } from '../../domain/qa.js';
+import { InMemoryOnboardingStore } from '../../onboarding/in-memory.js';
 import { fixtures } from '../../seeds/fixtures.js';
 import { createApp } from '../app.js';
 import { ErrorBody } from '../errors.js';
@@ -215,6 +216,7 @@ function makeWorld(opts: WorldOptions = {}) {
     auditReader,
     clock: { nowIso: () => state.now },
     idGen: () => `ae-${String(++state.counter).padStart(3, '0')}`,
+    onboarding: new InMemoryOnboardingStore(),
   };
   return { deps, sink, state, approvals, subjects, questions, initialItems, initialLeaves };
 }

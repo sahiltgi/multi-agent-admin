@@ -118,3 +118,37 @@ export const PolicyQuestionModel = model<StoredPolicyQuestion>(
   'PolicyQuestion',
   policyQuestionSchema,
 );
+
+// ---- OnboardingDeviation (spec onboarding, rule 21; OQ-6) ----
+// Storage-only, outside ENTITY_SCHEMAS and MODELS. The Zod schema in domain/onboarding.ts is
+// applied on every write and read; the change and gate result are stored as given.
+interface StoredOnboardingDeviation {
+  id: string;
+  checklistId: string;
+  requestId: string;
+  change: unknown;
+  rationale: string;
+  status: string;
+  gateResult: unknown;
+  proposedBy: string;
+  createdAt: string;
+}
+
+const onboardingDeviationSchema = new Schema<StoredOnboardingDeviation>(
+  {
+    id: { type: String, required: true, unique: true },
+    checklistId: { type: String, required: true, index: true },
+    requestId: { type: String, required: true },
+    change: { type: Schema.Types.Mixed, required: true },
+    rationale: { type: String, required: true },
+    status: { type: String, required: true },
+    gateResult: { type: Schema.Types.Mixed, required: true },
+    proposedBy: { type: String, required: true },
+    createdAt: { type: String, required: true },
+  },
+  { ...TOP_LEVEL, collection: 'onboardingDeviations', minimize: false },
+);
+export const OnboardingDeviationModel = model<StoredOnboardingDeviation>(
+  'OnboardingDeviation',
+  onboardingDeviationSchema,
+);

@@ -17,6 +17,9 @@ import { ToolRegistry } from '../agents/registry.js';
 import type { RuntimeDeps } from '../agents/runtime.js';
 import { detectInjectionHeuristic, wrapUntrusted } from '../agents/untrusted.js';
 import { LoadedLeavePolicy } from '../gate/leave-policy.schema.js';
+import { LoadedOnboardingPolicy } from '../gate/onboarding-policy.schema.js';
+import { evaluateOnboarding } from '../gate/onboarding.js';
+import { buildTemplateChecklistTasks } from '../domain/onboarding.js';
 import { AuditEvent, type LeaveRequest } from '../domain/schemas.js';
 import {
   InMemoryApprovalStore,
@@ -34,8 +37,9 @@ import {
 } from '../intake/in-memory.js';
 import type { IntakeDeps } from '../intake/ports.js';
 import { createIntakeRoutes } from '../intake/routes.js';
+import { InMemoryOnboardingStore } from '../onboarding/in-memory.js';
 import { fixtures } from '../seeds/fixtures.js';
-import type { Conversation } from './schemas.js';
+import { ChatResponse, type Conversation } from './schemas.js';
 import type { ConversationStore } from './ports.js';
 
 type Rec = Record<string, unknown>;
@@ -145,6 +149,12 @@ function gateFor(verdict: string): Rec {
 
 type Verdict =
   'ROUTE_TO_MANAGER' | 'ROUTE_TO_MANAGER_WITH_FLAGS' | 'RETURN_TO_EMPLOYEE' | 'ESCALATE_TO_HR';
+const ONBOARDING_TEXTS = {
+  created: 'CREATED-FIXTURE',
+  pending_manager: 'PENDING-MANAGER-FIXTURE',
+  denied: 'DENIED-FIXTURE',
+};
+
 interface WorldOpts {
   verdict?: Verdict;
   detect?: RuntimeDeps['detectInjection'];
@@ -165,6 +175,8 @@ interface WorldOpts {
   intakeTextsThrow?: string;
   /** policy-qa: wire the real runPolicyQa and evaluateQa (B and P below); default is a stub. */
   qa?: boolean;
+  /** spec onboarding: the Onboarding Agent port; default is a stub that rejects. */
+  runOnboarding?: IntakeDeps['runOnboarding'];
   /** policy-qa AT-38(c): the next idGen value after a QA run is blank (the item id). */
   blankIdAfterQa?: boolean;
   /** policy-qa AT-38(d): the QA escalation text loads as missing. */
@@ -547,6 +559,7 @@ async function makeWorld(o: WorldOpts = {}) {
   const qaTexts: IntakeDeps['qaTexts'] = {
     load: () => Promise.resolve(o.qaTextMissing === true ? null : QA_ESCALATED),
   };
+  const onboardingStore = new InMemoryOnboardingStore();
   const approvalDeps: ApprovalApiDeps = {
     directory,
     approvals,
@@ -555,6 +568,7 @@ async function makeWorld(o: WorldOpts = {}) {
     auditReader: new InMemoryAuditReader(inner),
     clock,
     idGen,
+    onboarding: onboardingStore,
   };
   const intakeDirectory: IntakeDeps['directory'] = {
     getById: (id: string) =>
@@ -583,6 +597,17 @@ async function makeWorld(o: WorldOpts = {}) {
     runPolicyQa,
     policyQuestions,
     qaTexts,
+    // spec onboarding (OQ-14): an employee's onboarding message gets the fixed denied text.
+    runOnboarding:
+      o.runOnboarding ??
+      (() => Promise.reject(new Error('runOnboarding stub: not wired in this world'))),
+    onboarding: onboardingStore,
+    onboardingTexts: {
+      load: (n) =>
+        n === o.intakeTextsThrow
+          ? Promise.reject(new Error('intake-texts-down'))
+          : Promise.resolve(ONBOARDING_TEXTS[n]),
+    },
   };
   const chatTexts = { ...CHAT_TEXTS, ...o.chatTexts };
   const texts = {
@@ -668,11 +693,174 @@ async function makeWorld(o: WorldOpts = {}) {
     questionMap,
     qWrites,
     runPolicyQa: runPolicyQa as unknown as ReturnType<typeof vi.fn<IntakeDeps['runPolicyQa']>>,
+    onboardingStore,
   };
   worlds.push(w);
   return w;
 }
 type World = Awaited<ReturnType<typeof makeWorld>>;
+
+// ---------- spec onboarding (OQ-14 chat-endpoint amendment): an hr_admin onboarding turn ----------
+describe('onboarding on /chat', () => {
+  const ONE_TASK_TEMPLATE = {
+    title: 'Engineer',
+    tasks: [
+      {
+        id: 'laptop',
+        title: 'Prepare laptop',
+        owner: 'it' as const,
+        dueOffsetDays: -3,
+        dependsOn: [],
+      },
+    ],
+  };
+  const ONBOARDING_POLICY = LoadedOnboardingPolicy.parse({
+    policy: {
+      version: 'v1',
+      templates: {
+        engineer: ONE_TASK_TEMPLATE,
+        sales: ONE_TASK_TEMPLATE,
+        operations: ONE_TASK_TEMPLATE,
+      },
+    },
+    policyVersion: 'v1',
+    policyHash: 'c'.repeat(64),
+  });
+  const ASSIGNEES = { managerEmployeeId: 'emp-002', buddyEmployeeId: null };
+  const REMOVE = { kind: 'remove' as const, templateTaskId: 'laptop' };
+  /** A canned Onboarding Agent result whose gate output comes from the real gate. */
+  const agentResult = (requestId: string, withDeviation: boolean): unknown => {
+    const tasks = buildTemplateChecklistTasks(ONE_TASK_TEMPLATE, '2026-12-01', ASSIGNEES);
+    const deviations = withDeviation ? [REMOVE] : [];
+    return {
+      kind: 'checklist',
+      requestId,
+      checklist: {
+        templateId: 'engineer',
+        startDate: '2026-12-01',
+        newHireTeam: 'team-a',
+        assignees: ASSIGNEES,
+        tasks,
+        policyVersion: 'v1',
+        policyHash: ONBOARDING_POLICY.policyHash,
+      },
+      deviations: deviations.map((change, index) => ({
+        index,
+        change,
+        rationale: 'Requested by hr_admin',
+      })),
+      gate: evaluateOnboarding(
+        {
+          templateId: 'engineer',
+          startDate: '2026-12-01',
+          assignees: ASSIGNEES,
+          checklistTasks: tasks,
+          deviations,
+        },
+        ONBOARDING_POLICY,
+      ),
+      injectionSuspected: false,
+    };
+  };
+
+  it.each([
+    [false, 'checklist_created', 'CREATED-FIXTURE', 0],
+    [true, 'pending_manager', 'PENDING-MANAGER-FIXTURE', 1],
+  ] as const)(
+    'deviation=%s gives status %s with the fixed text and an onboarding_checklist card',
+    async (withDeviation, status, reply, pending) => {
+      const w = await makeWorld({
+        runOnboarding: (input) => Promise.resolve(agentResult(input.requestId, withDeviation)),
+      });
+      w.model.queue(sRoute('onboarding'));
+      const res = await w.chat('emp-001', 'A new engineer joins team-a on 2026-12-01.');
+      expect(res.status).toBe(200);
+      const body = ChatResponse.parse(res.body);
+      expect(body).toMatchObject({ status, reply });
+      expect(body.card).toMatchObject({ kind: 'onboarding_checklist', pendingDeviations: pending });
+      const checklistId = (body.card as Rec).checklistId as string;
+      expect(await w.onboardingStore.getChecklist(checklistId)).not.toBeNull();
+      expect(await w.onboardingStore.listDeviationsByChecklist(checklistId)).toHaveLength(pending);
+      expect(
+        (await w.approvals.list()).filter((i) => i.kind === 'onboarding_deviation'),
+      ).toHaveLength(pending);
+      expect(await taskActive(w, body.conversationId, 'emp-001')).toBe(false); // single turn (OQ-12)
+      expect(chatPayloads(w).at(-1)).toMatchObject({
+        outcome: status,
+        checklistId,
+        pendingDeviations: pending,
+        onboardingVerdict: withDeviation ? 'MANAGER' : 'AUTO',
+      });
+    },
+  );
+
+  it('rule 22: a failed item insert is a 500 store_error and leaves no checklist, deviation or item', async () => {
+    const w = await makeWorld({
+      failItemInsert: true,
+      runOnboarding: (input) => Promise.resolve(agentResult(input.requestId, true)),
+    });
+    w.model.queue(sRoute('onboarding'));
+    const res = await w.chat('emp-001', 'A new engineer joins team-a on 2026-12-01.');
+    expect(res.status).toBe(500);
+    expect(chatPayloads(w).at(-1)).toMatchObject({
+      outcome: 'internal_error',
+      escalation: 'store_error',
+    });
+    expect(await w.onboardingStore.listChecklists()).toEqual([]);
+    expect(await w.onboardingStore.listDeviations()).toEqual([]);
+    expect(await w.approvals.list()).toEqual([]);
+    expect(w.cw.insert).toBe(0);
+  });
+
+  it('rule 22: a failed conversation save removes the checklist, deviation and item it wrote', async () => {
+    let runs = 0;
+    const w = await makeWorld({
+      saveThrows: () => true, // only saves to an existing conversation, i.e. turn 2
+      runOnboarding: (input) => {
+        runs += 1;
+        return Promise.resolve(
+          runs === 1
+            ? {
+                kind: 'needs_details',
+                requestId: input.requestId,
+                question: 'What is the exact start date?',
+                questionSource: 'model',
+                injectionSuspected: false,
+              }
+            : agentResult(input.requestId, true),
+        );
+      },
+    });
+    w.model.queue(sRoute('onboarding'), sRoute('onboarding'));
+    const first = await w.chat('emp-001', 'A new engineer joins team-a next month.');
+    expect(first.status).toBe(200);
+    const C = String(first.body.conversationId);
+    const res = await w.chat('emp-001', 'They start on 2026-12-01.', C);
+    expect(res.status).toBe(500);
+    expect(runs).toBe(2);
+    expect(await w.onboardingStore.listChecklists()).toEqual([]);
+    expect(await w.onboardingStore.listDeviations()).toEqual([]);
+    expect(await w.approvals.list()).toEqual([]);
+  });
+
+  it('OQ-12: an onboarding question opens no task', async () => {
+    const w = await makeWorld({
+      runOnboarding: (input) =>
+        Promise.resolve({
+          kind: 'needs_details',
+          requestId: input.requestId,
+          question: 'What is the exact start date?',
+          questionSource: 'model',
+          injectionSuspected: false,
+        }),
+    });
+    w.model.queue(sRoute('onboarding'));
+    const res = await w.chat('emp-001', 'A new engineer joins team-a next month.');
+    const body = ChatResponse.parse(res.body);
+    expect(body).toMatchObject({ status: 'question', reply: 'What is the exact start date?' });
+    expect(await taskActive(w, body.conversationId, 'emp-001')).toBe(false);
+  });
+});
 
 // ---------- policy-qa: AT-34 to AT-41, AT-43, AT-50 (real runPolicyQa and evaluateQa) ----------
 describe('policy-qa dispatch, records and responses', () => {
@@ -1060,11 +1248,12 @@ describe('policy-qa dispatch, records and responses', () => {
     expect(w.runPolicyQa).toHaveBeenCalledTimes(1);
   });
 
-  it('AT-41: onboarding still gets the not-available reply and runs no QA agent', async () => {
+  // Amended by onboarding OQ-14: an employee's onboarding message gets the denied text.
+  it('AT-41: onboarding from an employee gets the denied reply and runs no QA agent', async () => {
     const w = await makeWorld({ qa: true });
     w.model.queue(sRoute('onboarding'));
     const res = await post(w, 'emp-004', 'Set up my onboarding checklist');
-    expect(res.body).toMatchObject({ kind: 'reply', text: 'NOT-AVAILABLE-FIXTURE' });
+    expect(res.body).toMatchObject({ kind: 'reply', text: 'DENIED-FIXTURE' });
     expect(w.runPolicyQa).not.toHaveBeenCalled();
   });
 
@@ -1488,7 +1677,8 @@ describe('dispatch', () => {
     expect(await leavesOf(w)).toEqual([]);
     expect(await w.approvals.list()).toEqual([]);
 
-    // policy-qa amendment: policy_qa now runs the Policy Q&A Agent; onboarding keeps the fixed reply.
+    // policy-qa amendment: policy_qa now runs the Policy Q&A Agent. onboarding OQ-14: an
+    // employee's onboarding message gets the fixed denied reply.
     const v = await makeWorld({ qa: true });
     v.model.queue(sRoute('policy_qa'), [qaGood()]);
     const r = await v.chat('emp-004', QA_SICK_Q);
@@ -1499,7 +1689,7 @@ describe('dispatch', () => {
     const o = await makeWorld();
     o.model.queue(sRoute('onboarding'));
     const ro = await o.chat('emp-004', M1);
-    expect(ro.body).toMatchObject({ status: 'reply', reply: 'NOT-AVAILABLE-FIXTURE' });
+    expect(ro.body).toMatchObject({ status: 'reply', reply: 'DENIED-FIXTURE' });
     expect(o.runLeave).not.toHaveBeenCalled();
     expect(await taskActive(o, String(ro.body.conversationId))).toBe(false);
   });
@@ -1808,8 +1998,9 @@ describe('dispatch', () => {
     const res = await w.chat('emp-004', M2, C);
     await expect500(w, res, pre, C, before, 'store_error', 'intake-texts-down');
 
-    // policy-qa amendment: policy_qa now runs its agent; onboarding still loads not_available.
-    const v = await makeWorld({ intakeTextsThrow: 'not_available' });
+    // policy-qa amendment: policy_qa now runs its agent. onboarding OQ-14: onboarding loads the
+    // denied text from the onboarding texts loader.
+    const v = await makeWorld({ intakeTextsThrow: 'denied' });
     v.model.queue(sRoute('onboarding'));
     const r = await v.chat('emp-004', 'Set up my onboarding checklist');
     await expect500(v, r, null, undefined, 0, 'store_error', 'intake-texts-down');
@@ -2164,7 +2355,7 @@ describe('responses, audit and data', () => {
         {},
         first([sRoute('onboarding')]),
         'reply',
-        'NOT-AVAILABLE-FIXTURE',
+        'DENIED-FIXTURE', // onboarding OQ-14
         undefined,
       ],
       [

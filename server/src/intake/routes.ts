@@ -129,6 +129,8 @@ export function createIntakeRoutes(deps: IntakeDeps): RouteDefinition[] {
         );
       case 'policy_escalate':
         return escalatePolicyQuestion(outcome);
+      case 'onboarding':
+        return createOnboarding(outcome);
       case 'hand_back':
       case 'model_unavailable':
         // Unreachable: /messages never continues a task and never asks for retries.
@@ -151,6 +153,37 @@ export function createIntakeRoutes(deps: IntakeDeps): RouteDefinition[] {
       }
       const response = MessageResponse.parse({ kind: 'policy_escalated', requestId, text: o.text });
       const written = await dispatcher.writePolicyEscalation(o.question, o.item);
+      if (!written.ok) {
+        if (written.failed === 'item') await tryAudit('store_error');
+        throw internalError();
+      }
+      try {
+        await deps.audit.write(event);
+      } catch {
+        await written.undo();
+        throw internalError();
+      }
+      return response;
+    }
+
+    /** spec onboarding, rules 20–22: parse first, then checklist, deviations, items, event. */
+    async function createOnboarding(
+      o: Extract<typeof outcome, { kind: 'onboarding' }>,
+    ): Promise<MessageResponse> {
+      let event: AuditEvent;
+      try {
+        event = buildEvent({ ...o.records, outcome: 'onboarding_checklist', escalation: null });
+      } catch {
+        throw internalError();
+      }
+      const response = MessageResponse.parse({
+        kind: 'onboarding_checklist',
+        requestId,
+        checklistId: o.checklist.id,
+        text: o.text,
+        pendingDeviations: o.deviations.length,
+      });
+      const written = await dispatcher.writeOnboarding(o.checklist, o.deviations, o.items);
       if (!written.ok) {
         if (written.failed === 'item') await tryAudit('store_error');
         throw internalError();

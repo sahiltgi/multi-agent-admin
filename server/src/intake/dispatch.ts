@@ -5,6 +5,7 @@
 // gate. Nothing here approves or rejects (HARD RULE 1), and model text never picks a branch.
 import { z } from 'zod';
 import { LeaveAgentResult, type RecommendationCard } from '../agents/leave/schemas.js';
+import { OnboardingAgentResult } from '../agents/onboarding/schemas.js';
 import { PolicyQaResult, type QaFailureReason } from '../agents/policy_qa/schemas.js';
 import {
   ClarifyingQuestion,
@@ -12,6 +13,12 @@ import {
   RoutingDecision,
   type RouteLabel,
 } from '../agents/orchestrator/schemas.js';
+import {
+  OnboardingChecklist,
+  OnboardingDeviation,
+  type OnboardingChecklist as OnboardingChecklistT,
+  type OnboardingDeviation as OnboardingDeviationT,
+} from '../domain/onboarding.js';
 import { PolicyQuestion, type PolicyQuestion as PolicyQuestionT } from '../domain/qa.js';
 import {
   ApprovalItem,
@@ -36,6 +43,9 @@ export type RecordParts = Pick<
   | 'policyHash'
   | 'qaVerdict'
   | 'policyQuestionId'
+  | 'onboardingVerdict'
+  | 'checklistId'
+  | 'pendingDeviations'
 >;
 
 export const NO_RECORD: RecordParts = {
@@ -122,9 +132,18 @@ export type Outcome =
       escalation: DispatchEscalation;
       records: RecordParts;
     }
+  /** An onboarding checklist plus one deviation and item per proposal, parsed, not yet written. */
+  | {
+      kind: 'onboarding';
+      checklist: OnboardingChecklistT;
+      deviations: OnboardingDeviationT[];
+      items: ApprovalItemT[];
+      text: string;
+      records: RecordParts;
+    }
   | {
       kind: 'question';
-      label: 'unclear' | 'leave';
+      label: 'unclear' | 'leave' | 'onboarding';
       text: string;
       escalation: DispatchEscalation | null;
     }
@@ -171,6 +190,12 @@ export interface Dispatcher {
   writeRecords(leave: LeaveRequestT, item: ApprovalItemT): Promise<WriteResult>;
   /** PolicyQuestion, then item; a failed item removes the question (spec policy-qa, rule 22). */
   writePolicyEscalation(question: PolicyQuestionT, item: ApprovalItemT): Promise<WriteResult>;
+  /** Checklist, deviations, items; any failure removes what was written, in reverse. */
+  writeOnboarding(
+    checklist: OnboardingChecklistT,
+    deviations: OnboardingDeviationT[],
+    items: ApprovalItemT[],
+  ): Promise<WriteResult>;
 }
 
 const AgentDecision = z.union([RoutingDecision, OrchestratorFailure]);
@@ -225,11 +250,8 @@ export function createDispatcher(deps: IntakeDeps): Dispatcher {
       switch (decision.label) {
         case 'policy_qa':
           return out(await policyQa(actor, requestId, mode.text, opts, routing));
-        case 'onboarding': {
-          const fixed = await deps.texts.load('not_available');
-          if (fixed === null) return escalate('text_missing');
-          return out({ kind: 'reply', label: decision.label, text: fixed, gate: NO_RECORD });
-        }
+        case 'onboarding':
+          return out(await onboarding(actor, requestId, mode.text, opts, routing));
         case 'prohibited':
         case 'out_of_scope':
           return out({
@@ -484,6 +506,180 @@ export function createDispatcher(deps: IntakeDeps): Dispatcher {
     };
   }
 
+  /**
+   * The Onboarding Agent, once, for an hr_admin only (spec onboarding, rules 19–22). The verdict
+   * is copied from the gate output the result carries; nothing here reads model text to pick a
+   * branch, and every record is built and parsed before the first write.
+   */
+  async function onboarding(
+    actor: Actor,
+    requestId: string,
+    userText: string,
+    opts: DispatchOptions,
+    routing: Routing,
+  ): Promise<Outcome> {
+    const escalated = async (escalation: DispatchEscalation): Promise<Outcome> => ({
+      kind: 'escalate',
+      escalation,
+      text: await deps.texts.load('escalated'),
+    });
+    // Rule 19 (OQ-3): only hr_admin starts onboarding; the agent never runs for anyone else.
+    if (actor.role !== 'hr_admin') {
+      const denied = await deps.onboardingTexts.load('denied');
+      if (denied === null) return escalated('text_missing'); // as a missing reply text always has
+      return { kind: 'reply', label: 'onboarding', text: denied, gate: NO_RECORD };
+    }
+    let raw: unknown;
+    try {
+      raw = await deps.runOnboarding({
+        requestId,
+        agentId: 'onboarding',
+        actor,
+        userText,
+        documents: [],
+      });
+    } catch {
+      return { kind: 'agent_error' };
+    }
+    const parsed = OnboardingAgentResult.safeParse(raw);
+    if (!parsed.success) return escalated('invalid_agent_output');
+    const result = parsed.data;
+    if (result.requestId !== requestId) return escalated('request_id_mismatch'); // rule 6
+    routing.injectionSuspected = result.injectionSuspected; // audit only
+
+    if (result.kind === 'needs_details') {
+      return { kind: 'question', label: 'onboarding', text: result.question, escalation: null };
+    }
+    if (result.kind === 'escalated') {
+      if (result.reason === 'audit_failed') return { kind: 'audit_failed' };
+      if (result.reason === 'model_unavailable' && opts.retryOnModelUnavailable) {
+        return { kind: 'model_unavailable' };
+      }
+      return escalated(result.reason);
+    }
+
+    const { checklist: built, deviations: proposals, gate } = result;
+    // Rule 16 (OQ-13): a checklist that differs from the template is a code fault; nothing lands.
+    // A deviation never lands without a MANAGER verdict, and AUTO never carries one.
+    const [matchesTemplate] = gate.ruleResults;
+    if (!matchesTemplate.passed) return { kind: 'parse_error' };
+    if ((gate.verdict === 'AUTO') !== (proposals.length === 0)) return { kind: 'parse_error' };
+
+    const text = await deps.onboardingTexts.load(
+      proposals.length === 0 ? 'created' : 'pending_manager',
+    );
+    if (text === null) return { kind: 'escalate', escalation: 'text_missing', text: null };
+
+    // ---- build and parse every record before any write (rule 22) ----
+    const createdAt = deps.clock.nowIso();
+    const checklist = OnboardingChecklist.safeParse({
+      id: deps.idGen(),
+      requestId,
+      newJoinerId: deps.idGen(), // OQ-9: an opaque id; no name is stored
+      templateId: built.templateId,
+      templateVersion: gate.policyVersion,
+      policyHash: gate.policyHash,
+      startDate: built.startDate,
+      newHireTeam: built.newHireTeam,
+      managerEmployeeId: built.assignees.managerEmployeeId,
+      buddyEmployeeId: built.assignees.buddyEmployeeId,
+      createdBy: actor.employeeId,
+      tasks: built.tasks, // exactly the template (rules 20, 21; OQ-4)
+      removedTemplateTaskIds: [],
+      gateResult: gate,
+      version: 0,
+      createdAt,
+    });
+    if (!checklist.success) return { kind: 'parse_error' };
+    const deviations: OnboardingDeviationT[] = [];
+    const items: ApprovalItemT[] = [];
+    for (const p of proposals) {
+      const deviation = OnboardingDeviation.safeParse({
+        id: deps.idGen(),
+        checklistId: checklist.data.id,
+        requestId,
+        change: p.change,
+        rationale: p.rationale,
+        status: 'pending',
+        gateResult: gate,
+        proposedBy: actor.employeeId,
+        createdAt,
+      });
+      if (!deviation.success) return { kind: 'parse_error' };
+      const item = ApprovalItem.safeParse({
+        id: deps.idGen(),
+        kind: 'onboarding_deviation',
+        subjectId: deviation.data.id,
+        assigneeRole: 'manager',
+        assigneeId: checklist.data.managerEmployeeId,
+        flagged: false,
+        status: 'open',
+        createdAt,
+      });
+      if (!item.success) return { kind: 'parse_error' };
+      deviations.push(deviation.data);
+      items.push(item.data);
+    }
+    const pending = deviations.length > 0;
+    return {
+      kind: 'onboarding',
+      checklist: checklist.data,
+      deviations,
+      items,
+      text,
+      records: {
+        ...NO_RECORD,
+        assigneeRole: pending ? 'manager' : null,
+        assigneeId: pending ? checklist.data.managerEmployeeId : null,
+        flagged: pending ? false : null,
+        policyVersion: gate.policyVersion,
+        policyHash: gate.policyHash,
+        onboardingVerdict: gate.verdict,
+        checklistId: checklist.data.id,
+        pendingDeviations: deviations.length,
+      },
+    };
+  }
+
+  /**
+   * Checklist, then each deviation, then each item (rule 22). Any failure removes what was
+   * written, in reverse: items, deviations, then the checklist. A throwing first insert propagates.
+   */
+  async function writeOnboarding(
+    checklist: OnboardingChecklistT,
+    deviations: OnboardingDeviationT[],
+    items: ApprovalItemT[],
+  ): Promise<WriteResult> {
+    if (!(await deps.onboarding.insertChecklist(checklist))) {
+      return { ok: false, failed: 'request' };
+    }
+    const writtenDeviations: string[] = [];
+    const writtenItems: string[] = [];
+    const removeAll = async (): Promise<void> => {
+      for (const id of [...writtenItems].reverse()) await undo(() => deps.approvals.remove(id));
+      for (const id of [...writtenDeviations].reverse()) {
+        await undo(() => deps.onboarding.removeDeviation(id));
+      }
+      await undo(() => deps.onboarding.removeChecklist(checklist.id));
+    };
+    for (const d of deviations) {
+      // A rejected insert counts the same as a refused one.
+      if (!(await deps.onboarding.insertDeviation(d).catch(() => false))) {
+        await removeAll();
+        return { ok: false, failed: 'item' };
+      }
+      writtenDeviations.push(d.id);
+    }
+    for (const item of items) {
+      if (!(await deps.approvals.insert(item).catch(() => false))) {
+        await removeAll();
+        return { ok: false, failed: 'item' };
+      }
+      writtenItems.push(item.id);
+    }
+    return { ok: true, undo: removeAll };
+  }
+
   /** PolicyQuestion, then item; a failed item removes the question. A throwing first insert propagates. */
   async function writePolicyEscalation(
     question: PolicyQuestionT,
@@ -523,5 +719,5 @@ export function createDispatcher(deps: IntakeDeps): Dispatcher {
     };
   }
 
-  return { decide, writeRecords, writePolicyEscalation };
+  return { decide, writeRecords, writePolicyEscalation, writeOnboarding };
 }

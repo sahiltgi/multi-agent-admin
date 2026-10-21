@@ -5,6 +5,7 @@ import type { Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { InMemoryAuditSink } from '../agents/audit.js';
+import { InMemoryOnboardingStore } from '../onboarding/in-memory.js';
 import { fixtures } from '../seeds/fixtures.js';
 import { createApp } from './app.js';
 import { ErrorBody } from './errors.js';
@@ -41,6 +42,7 @@ function deps(): ApprovalApiDeps {
     auditReader: new InMemoryAuditReader(sink),
     clock: { nowIso: () => '2026-10-15T10:00:00Z' },
     idGen: () => `ae-${String(++n)}`,
+    onboarding: new InMemoryOnboardingStore(),
   };
 }
 

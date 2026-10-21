@@ -14,6 +14,7 @@ import {
   LeaveRequestStatus,
   LeaveType,
   LeaveVerdict,
+  OnboardingVerdict,
   Role,
 } from '../domain/schemas.js';
 
@@ -76,8 +77,8 @@ export const MessageResponse = z.discriminatedUnion('kind', [
     .object({
       kind: z.literal('question'),
       requestId: Id,
-      label: z.enum(['unclear', 'leave']),
-      text: ClarifyingQuestion, // the orchestrator's or the Leave Agent's validated question
+      label: z.enum(['unclear', 'leave', 'onboarding']),
+      text: ClarifyingQuestion, // the orchestrator's or an agent's validated question
     })
     .strict(),
   z
@@ -110,6 +111,16 @@ export const MessageResponse = z.discriminatedUnion('kind', [
   z
     .object({ kind: z.literal('policy_escalated'), requestId: Id, text: z.string().min(1) })
     .strict(),
+  // spec onboarding, rules 20, 21: a template checklist, plus any deviations pending a manager
+  z
+    .object({
+      kind: z.literal('onboarding_checklist'),
+      requestId: Id,
+      checklistId: Id,
+      text: z.string().min(1), // fixed text, never model text
+      pendingDeviations: z.number().int().nonnegative(),
+    })
+    .strict(),
 ]);
 export type MessageResponse = z.infer<typeof MessageResponse>;
 
@@ -126,6 +137,10 @@ export const DispatchEscalation = z.enum([
   'qa_gate', // the Q&A gate escalated (spec policy-qa, rule 25)
   // Policy Q&A failures that escalate to HR (rule 19); model_unavailable is already listed
   ...QaFailureReason.exclude(['model_unavailable', 'audit_failed']).options,
+  // Onboarding Agent escalations not already listed (spec onboarding, rules 13, 14)
+  'multiple_checklists',
+  'deviation_without_checklist',
+  'invalid_deviation',
 ]);
 export type DispatchEscalation = z.infer<typeof DispatchEscalation>;
 
@@ -138,6 +153,7 @@ export const INTAKE_OUTCOMES = [
   'escalated',
   'policy_answer',
   'policy_escalated',
+  'onboarding_checklist', // spec onboarding, rules 20, 21
 ] as const;
 
 export const IntakePayload = z
@@ -159,6 +175,10 @@ export const IntakePayload = z
     policyHash: z.string().nullable(), // unredacted (leave-agent D-16)
     qaVerdict: QaVerdict.nullable(), // copied from the Q&A gate (spec policy-qa, rule 25)
     policyQuestionId: Id.nullable(),
+    // spec onboarding (OQ-14): set only on an onboarding_checklist outcome
+    onboardingVerdict: OnboardingVerdict.optional(), // copied from the onboarding gate
+    checklistId: Id.optional(),
+    pendingDeviations: z.number().int().nonnegative().optional(),
     injectionSuspected: z.boolean(),
   })
   .strict(); // no user text, reply text or reason

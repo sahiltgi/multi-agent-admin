@@ -34,3 +34,25 @@ export async function loadLeaveToolDescriptions(
   );
   return LeaveToolDescriptions.parse(Object.fromEntries(names.map((n, i) => [n, texts[i]])));
 }
+
+// ---- Onboarding Agent tools (spec onboarding, rule 11): <promptsRoot>/onboarding/tools/<tool>.md ----
+export const OnboardingToolDescriptions = z
+  .object({
+    get_template: Description,
+    create_checklist: Description,
+    propose_deviation: Description,
+  })
+  .strict();
+export type OnboardingToolDescriptions = z.infer<typeof OnboardingToolDescriptions>;
+
+export async function loadOnboardingToolDescriptions(
+  promptsRoot: string,
+): Promise<OnboardingToolDescriptions> {
+  const names = Object.keys(
+    OnboardingToolDescriptions.shape,
+  ) as (keyof OnboardingToolDescriptions)[];
+  const texts = await Promise.all(
+    names.map((name) => readFile(join(promptsRoot, 'onboarding', 'tools', `${name}.md`), 'utf8')),
+  );
+  return OnboardingToolDescriptions.parse(Object.fromEntries(names.map((n, i) => [n, texts[i]])));
+}

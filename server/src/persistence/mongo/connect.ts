@@ -4,6 +4,7 @@ import mongoose, { type Model } from 'mongoose';
 import type { AuditSink } from '../../agents/audit.js';
 import type { ConversationStore } from '../../chat/ports.js';
 import type { LeaveDataPort } from '../../agents/leave/port.js';
+import type { OnboardingDirectory, OnboardingStore } from '../../domain/onboarding.js';
 import type { PolicyQuestionStore } from '../../domain/qa.js';
 import type {
   ApprovalStore,
@@ -28,12 +29,14 @@ import {
   ConversationModel,
   IdempotencyRecordModel,
   MessageOwnerModel,
+  OnboardingDeviationModel,
   PolicyQuestionModel,
 } from './models.js';
+import { MongoOnboardingStore } from './onboarding.js';
 import { MongoPolicyQuestionStore } from './policy-questions.js';
 
 export interface ServerStores {
-  directory: EmployeeDirectory;
+  directory: EmployeeDirectory & OnboardingDirectory; // getTeamById: spec onboarding OQ-7
   approvals: ApprovalStore & ApprovalItemWriter;
   leaveRequests: LeaveRequestStore & SubjectResolver;
   audit: AuditSink & AuditReader;
@@ -41,6 +44,7 @@ export interface ServerStores {
   leaveData: LeaveDataPort;
   conversations: ConversationStore; // chat-endpoint rule 25
   policyQuestions: PolicyQuestionStore; // spec policy-qa, rule 26
+  onboarding: OnboardingStore; // spec onboarding, rules 21–25
 }
 
 export interface MongoHandle {
@@ -64,6 +68,7 @@ const ALL_MODELS: readonly Model<never>[] = [
   IdempotencyRecordModel,
   ConversationModel,
   PolicyQuestionModel,
+  OnboardingDeviationModel,
 ] as unknown as readonly Model<never>[];
 
 // The unique indexes rules 3–7 rely on. Startup refuses to serve without them (D-4).
@@ -76,6 +81,8 @@ const REQUIRED_UNIQUE: readonly { model: Model<never>; key: string }[] = [
   { model: IdempotencyRecordModel as unknown as Model<never>, key: 'employeeId,key' },
   { model: ConversationModel as unknown as Model<never>, key: 'id' },
   { model: PolicyQuestionModel as unknown as Model<never>, key: 'id' },
+  { model: MODELS.OnboardingChecklist as unknown as Model<never>, key: 'id' },
+  { model: OnboardingDeviationModel as unknown as Model<never>, key: 'id' },
 ];
 
 async function assertUniqueIndexes(): Promise<void> {
@@ -91,15 +98,18 @@ async function assertUniqueIndexes(): Promise<void> {
 
 function stores(): ServerStores {
   const policyQuestions = new MongoPolicyQuestionStore();
+  const onboarding = new MongoOnboardingStore();
   return {
     directory: new MongoEmployeeDirectory(),
     approvals: new MongoApprovalStore(),
-    leaveRequests: new MongoLeaveRequestStore(policyQuestions), // also the subject resolver
+    // also the subject resolver, for leave, escalation and onboarding deviation items
+    leaveRequests: new MongoLeaveRequestStore(policyQuestions, onboarding),
     audit: new MongoAuditStore(),
     idempotency: new MongoIdempotencyStore(),
     leaveData: new MongoLeaveDataPort(),
     conversations: new MongoConversationStore(),
     policyQuestions,
+    onboarding,
   };
 }
 

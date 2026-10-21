@@ -1,0 +1,1 @@
+That start date has already passed. What is the correct start date (YYYY-MM-DD)?

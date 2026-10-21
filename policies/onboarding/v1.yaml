@@ -1,0 +1,138 @@
+# Onboarding role templates v1 (spec onboarding, rule 1; OQ-1). Synthetic draft for owner review.
+# Validated by OnboardingPolicyV1 in server/src/gate/onboarding-policy.schema.ts; any change here
+# must change tests or evals in the same commit (HARD RULE 5). Changing even a comment changes
+# policyHash.
+# owner: it | admin | manager | buddy. dueOffsetDays: whole calendar days from the start date
+# (negative = before day one), -30..90, no weekend or holiday shift (OQ-8). dependsOn names task
+# ids in the same template; unknown ids, self-dependencies and cycles fail startup (OQ-5).
+version: v1
+templates:
+  engineer:
+    title: Engineer
+    tasks:
+      - id: laptop
+        title: Prepare laptop
+        owner: it
+        dueOffsetDays: -3
+        dependsOn: []
+      - id: accounts
+        title: Create accounts and repository access
+        owner: it
+        dueOffsetDays: -1
+        dependsOn: [laptop]
+      - id: desk
+        title: Assign desk and building badge
+        owner: admin
+        dueOffsetDays: -1
+        dependsOn: []
+      - id: welcome
+        title: Welcome meeting
+        owner: manager
+        dueOffsetDays: 0
+        dependsOn: []
+      - id: buddy-intro
+        title: Buddy introduction
+        owner: buddy
+        dueOffsetDays: 1
+        dependsOn: [welcome]
+      - id: dev-setup
+        title: Pair on local development setup
+        owner: buddy
+        dueOffsetDays: 2
+        dependsOn: [accounts, buddy-intro]
+      - id: first-review
+        title: First-week check-in
+        owner: manager
+        dueOffsetDays: 7
+        dependsOn: [accounts, welcome]
+      - id: thirty-day-review
+        title: Thirty-day review
+        owner: manager
+        dueOffsetDays: 30
+        dependsOn: [first-review]
+  sales:
+    title: Sales
+    tasks:
+      - id: laptop
+        title: Prepare laptop
+        owner: it
+        dueOffsetDays: -3
+        dependsOn: []
+      - id: crm-access
+        title: Create CRM and email accounts
+        owner: it
+        dueOffsetDays: -1
+        dependsOn: [laptop]
+      - id: desk
+        title: Assign desk and building badge
+        owner: admin
+        dueOffsetDays: -1
+        dependsOn: []
+      - id: welcome
+        title: Welcome meeting
+        owner: manager
+        dueOffsetDays: 0
+        dependsOn: []
+      - id: buddy-intro
+        title: Buddy introduction
+        owner: buddy
+        dueOffsetDays: 1
+        dependsOn: [welcome]
+      - id: territory-briefing
+        title: Territory and accounts briefing
+        owner: manager
+        dueOffsetDays: 3
+        dependsOn: [welcome, crm-access]
+      - id: shadow-calls
+        title: Shadow customer calls
+        owner: buddy
+        dueOffsetDays: 5
+        dependsOn: [buddy-intro, crm-access]
+      - id: thirty-day-review
+        title: Thirty-day review
+        owner: manager
+        dueOffsetDays: 30
+        dependsOn: [territory-briefing]
+  operations:
+    title: Operations
+    tasks:
+      - id: laptop
+        title: Prepare laptop
+        owner: it
+        dueOffsetDays: -3
+        dependsOn: []
+      - id: accounts
+        title: Create accounts and tool access
+        owner: it
+        dueOffsetDays: -1
+        dependsOn: [laptop]
+      - id: desk
+        title: Assign desk and building badge
+        owner: admin
+        dueOffsetDays: -1
+        dependsOn: []
+      - id: safety-induction
+        title: Book site safety induction
+        owner: admin
+        dueOffsetDays: 0
+        dependsOn: []
+      - id: welcome
+        title: Welcome meeting
+        owner: manager
+        dueOffsetDays: 0
+        dependsOn: []
+      - id: buddy-intro
+        title: Buddy introduction
+        owner: buddy
+        dueOffsetDays: 1
+        dependsOn: [welcome]
+      - id: process-walkthrough
+        title: Walk through team processes and runbooks
+        owner: buddy
+        dueOffsetDays: 3
+        dependsOn: [buddy-intro, accounts]
+      - id: thirty-day-review
+        title: Thirty-day review
+        owner: manager
+        dueOffsetDays: 30
+        dependsOn: [welcome]

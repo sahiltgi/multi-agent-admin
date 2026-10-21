@@ -17,6 +17,7 @@ import {
 } from 'yaml';
 import { z } from 'zod';
 import { LeavePolicyV1, LoadedLeavePolicy } from '../gate/leave-policy.schema.js';
+import { LoadedOnboardingPolicy, OnboardingPolicyV1 } from '../gate/onboarding-policy.schema.js';
 import { LoadedQaPolicy, QaPolicyV1 } from '../gate/qa-policy.schema.js';
 
 const IssuePath = z.array(z.union([z.string(), z.number()]));
@@ -228,4 +229,9 @@ export function loadLeavePolicy(filePath: string): LoadedLeavePolicy {
 /** Reads, hashes, parses and validates the QA sensitive-topics policy (spec policy-qa, rule 3). */
 export function loadQaPolicy(filePath: string): LoadedQaPolicy {
   return LoadedQaPolicy.parse(loadPolicyFile(filePath, QaPolicyV1, 'QA'));
+}
+
+/** Reads, hashes, parses and validates the onboarding role templates (spec onboarding, rule 1). */
+export function loadOnboardingPolicy(filePath: string): LoadedOnboardingPolicy {
+  return LoadedOnboardingPolicy.parse(loadPolicyFile(filePath, OnboardingPolicyV1, 'Onboarding'));
 }

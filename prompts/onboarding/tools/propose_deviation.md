@@ -1,0 +1,1 @@
+Record one change to the template that the HR admin explicitly asked for: an extra task, or a template task to remove. It is only a proposal for the new joiner's manager to approve; it never changes the checklist and never approves anything.

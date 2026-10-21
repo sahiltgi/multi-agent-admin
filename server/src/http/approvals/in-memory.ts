@@ -1,6 +1,7 @@
 // In-memory port implementations for tests and local runs (spec approval-queue, rule 16).
 // Every read and write clones, so callers never share state with the store.
 import type { InMemoryAuditSink } from '../../agents/audit.js';
+import type { OnboardingDirectory, OnboardingStore } from '../../domain/onboarding.js';
 import type { PolicyQuestionStore } from '../../domain/qa.js';
 import type {
   ApprovalItem,
@@ -8,9 +9,11 @@ import type {
   AuditEvent,
   Employee,
   LeaveRequest,
+  Team,
 } from '../../domain/schemas.js';
 import {
   resolveEscalation,
+  resolveOnboardingDeviation,
   type ApprovalStore,
   type AuditReader,
   type EmployeeDirectory,
@@ -18,16 +21,24 @@ import {
   type SubjectResolver,
 } from './ports.js';
 
-export class InMemoryEmployeeDirectory implements EmployeeDirectory {
+export class InMemoryEmployeeDirectory implements EmployeeDirectory, OnboardingDirectory {
   private readonly byId: Map<string, Employee>;
+  private readonly teamsById: Map<string, Team>;
 
-  constructor(employees: readonly Employee[]) {
+  /** `teams` serves the Onboarding Agent's team lookup (spec onboarding OQ-7). */
+  constructor(employees: readonly Employee[], teams: readonly Team[] = []) {
     this.byId = new Map(employees.map((e) => [e.id, structuredClone(e)]));
+    this.teamsById = new Map(teams.map((t) => [t.id, structuredClone(t)]));
   }
 
   getById(id: string): Promise<Employee | null> {
     const e = this.byId.get(id);
     return Promise.resolve(e === undefined ? null : structuredClone(e));
+  }
+
+  getTeamById(id: string): Promise<Team | null> {
+    const t = this.teamsById.get(id);
+    return Promise.resolve(t === undefined ? null : structuredClone(t));
   }
 }
 
@@ -75,13 +86,20 @@ export class InMemorySubjectResolver implements SubjectResolver {
   constructor(
     leaves: readonly LeaveRequest[],
     private readonly questions: PolicyQuestionStore,
+    private readonly onboarding: OnboardingStore | null = null,
   ) {
     this.byId = new Map(leaves.map((l) => [l.id, structuredClone(l)]));
   }
 
   resolve(item: ApprovalItem): Promise<ResolvedSubject | null> {
     if (item.kind === 'escalation') return resolveEscalation(item, this.questions);
-    const leave = item.kind === 'leave_request' ? this.byId.get(item.subjectId) : undefined;
+    if (item.kind === 'onboarding_deviation') {
+      // spec onboarding OQ-10: no store means the deviation can't be resolved (fail closed).
+      return this.onboarding === null
+        ? Promise.resolve(null)
+        : resolveOnboardingDeviation(item, this.onboarding);
+    }
+    const leave = this.byId.get(item.subjectId); // only leave_request items reach here
     if (leave === undefined) return Promise.resolve(null);
     return Promise.resolve({
       ownerEmployeeId: leave.employeeId,

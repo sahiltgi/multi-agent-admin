@@ -11,6 +11,7 @@ import {
   InMemoryAuditReader,
   InMemoryEmployeeDirectory,
 } from '../http/approvals/in-memory.js';
+import { InMemoryOnboardingStore } from '../onboarding/in-memory.js';
 import { fixtures } from '../seeds/fixtures.js';
 import {
   InMemoryIdempotencyStore,
@@ -111,6 +112,10 @@ function world(opts: {
     runPolicyQa: () => Promise.reject(new Error('runPolicyQa not used in these tests')),
     policyQuestions: new InMemoryPolicyQuestionStore(),
     qaTexts: new InMemoryQaTexts({}),
+    // spec onboarding (OQ-14): onboarding dispatch deps; these tests never run the agent.
+    runOnboarding: () => Promise.reject(new Error('runOnboarding not used in these tests')),
+    onboarding: new InMemoryOnboardingStore(),
+    onboardingTexts: { load: () => Promise.resolve('DENIED-FIXTURE') },
   };
   const app = createApp(
     {
@@ -121,6 +126,7 @@ function world(opts: {
       auditReader: new InMemoryAuditReader(sink),
       clock: { nowIso: () => NOW },
       idGen,
+      onboarding: new InMemoryOnboardingStore(),
     },
     createIntakeRoutes(deps),
   );

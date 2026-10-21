@@ -3,6 +3,8 @@
 import type { Express } from 'express';
 import { runLeaveAgent, type LeaveAgentDeps } from '../agents/leave/run.js';
 import { buildLeaveTools } from '../agents/leave/tools.js';
+import { runOnboardingAgent, type OnboardingAgentDeps } from '../agents/onboarding/run.js';
+import { buildOnboardingTools } from '../agents/onboarding/tools.js';
 import { classifyMessage } from '../agents/orchestrator/classify.js';
 import { runPolicyQa } from '../agents/policy_qa/run.js';
 import { createProductionRegistry } from '../agents/registry.js';
@@ -12,10 +14,12 @@ import { detectInjectionHeuristic } from '../agents/untrusted.js';
 import { createChatRoutes } from '../chat/routes.js';
 import type { LoadedLeavePolicy } from '../gate/leave-policy.schema.js';
 import { evaluateLeave } from '../gate/leave.js';
+import { evaluateOnboarding } from '../gate/onboarding.js';
 import { createApp } from '../http/app.js';
 import type { ApprovalApiDeps } from '../http/approvals/ports.js';
 import type { IntakeDeps } from '../intake/ports.js';
 import { createIntakeRoutes } from '../intake/routes.js';
+import { createOnboardingRoutes } from '../onboarding/routes.js';
 import type { ServerStores } from '../persistence/mongo/connect.js';
 import type { BootFiles } from './boot.js';
 
@@ -30,7 +34,8 @@ export interface ServerParts {
   scheduler: Scheduler;
   idGen: () => string;
   /** Tests only: replaces the classifyMessage and runLeaveAgent bindings. */
-  agents?: Pick<IntakeDeps, 'classify' | 'runLeave'> & Partial<Pick<IntakeDeps, 'runPolicyQa'>>;
+  agents?: Pick<IntakeDeps, 'classify' | 'runLeave'> &
+    Partial<Pick<IntakeDeps, 'runPolicyQa' | 'runOnboarding'>>;
 }
 
 /** UTC calendar date of the caller's clock (leave-agent D-13). */
@@ -61,6 +66,17 @@ export function buildApp(parts: ServerParts): Express {
     toolDescriptions: boot.leaveToolDescriptions,
   };
   for (const tool of buildLeaveTools(leaveDeps)) registry.register(tool);
+  // spec onboarding, rules 10, 27: the three onboarding tools, the boot policy and the real gate.
+  const onboardingDeps: OnboardingAgentDeps = {
+    runtime,
+    directory: stores.directory,
+    policy: boot.onboardingPolicy,
+    evaluateOnboarding,
+    toIsoDate,
+    texts: boot.onboardingAgentTexts,
+    toolDescriptions: boot.onboardingToolDescriptions,
+  };
+  for (const tool of buildOnboardingTools(onboardingDeps)) registry.register(tool);
 
   const approvalDeps: ApprovalApiDeps = {
     directory: stores.directory,
@@ -70,6 +86,7 @@ export function buildApp(parts: ServerParts): Express {
     auditReader: stores.audit,
     clock,
     idGen,
+    onboarding: stores.onboarding,
   };
   const intakeDeps: IntakeDeps = {
     directory: stores.directory,
@@ -103,6 +120,10 @@ export function buildApp(parts: ServerParts): Express {
         })),
     policyQuestions: stores.policyQuestions,
     qaTexts: boot.qaTexts,
+    runOnboarding:
+      parts.agents?.runOnboarding ?? ((input) => runOnboardingAgent(input, onboardingDeps)),
+    onboarding: stores.onboarding,
+    onboardingTexts: boot.onboardingTexts,
   };
   return createApp(approvalDeps, [
     ...createIntakeRoutes(intakeDeps),
@@ -111,6 +132,14 @@ export function buildApp(parts: ServerParts): Express {
       intake: intakeDeps,
       conversations: stores.conversations,
       texts: boot.chatTexts,
+    }),
+    // spec onboarding, rules 24, 25: task completion and the checklist view.
+    ...createOnboardingRoutes({
+      directory: stores.directory,
+      onboarding: stores.onboarding,
+      audit: stores.audit,
+      clock,
+      idGen,
     }),
   ]);
 }

@@ -1,5 +1,11 @@
 // Approval queue routes (spec approval-queue, rules 5–14). The API records human decisions next
 // to a gate result that already exists; it never computes or changes a verdict (HARD RULE 1).
+import {
+  DeviationConflictError,
+  OnboardingChecklist,
+  OnboardingDeviation,
+  applyDeviation,
+} from '../../domain/onboarding.js';
 import type { PolicyQuestion } from '../../domain/qa.js';
 import {
   ApprovalItem,
@@ -26,6 +32,7 @@ import {
   TraceParams,
   TraceResponse,
   type ApprovalItemView,
+  type DeviationView,
   type LeaveSubjectView,
   type PolicyQuestionView,
 } from './schemas.js';
@@ -69,6 +76,17 @@ function questionView(q: PolicyQuestion): PolicyQuestionView {
   };
 }
 
+function deviationView(d: OnboardingDeviation): DeviationView {
+  return {
+    deviationId: d.id,
+    checklistId: d.checklistId,
+    change: d.change,
+    rationale: d.rationale,
+    status: d.status,
+    proposedBy: d.proposedBy,
+  };
+}
+
 function viewOf(actor: Actor, { ctx, resolved }: Loaded): ApprovalItemView {
   return {
     item: ctx.item,
@@ -77,6 +95,10 @@ function viewOf(actor: Actor, { ctx, resolved }: Loaded): ApprovalItemView {
     question:
       ctx.item.kind === 'escalation' && resolved?.policyQuestion != null
         ? questionView(resolved.policyQuestion)
+        : null,
+    deviation:
+      ctx.item.kind === 'onboarding_deviation' && resolved?.onboarding !== undefined
+        ? deviationView(resolved.onboarding.deviation)
         : null,
     canAct: actDenial(actor, ctx) === null,
   };
@@ -117,6 +139,15 @@ const STATUS_AFTER: Record<'approve' | 'reject', ApprovalStatus> = {
   approve: 'approved',
   reject: 'rejected',
 };
+
+/** spec onboarding, rule 23: what an approve or reject does to the deviation and its checklist. */
+interface DeviationPlan {
+  deviation: OnboardingDeviation;
+  nextDeviation: OnboardingDeviation;
+  /** Set only for an approve: the checklist as read, and with the deviation applied. */
+  checklist: OnboardingChecklist | null;
+  nextChecklist: OnboardingChecklist | null;
+}
 
 export function createApprovalRoutes(deps: ApprovalApiDeps): RouteDefinition[] {
   const list = defineRoute({
@@ -183,7 +214,8 @@ export function createApprovalRoutes(deps: ApprovalApiDeps): RouteDefinition[] {
       // Both records are built and parsed before any write, so a parse failure changes nothing.
       const event = AuditEvent.parse({
         id: deps.idGen(),
-        traceId: item.subjectId,
+        // A deviation's decision joins the onboarding request's trace (spec onboarding, rule 18).
+        traceId: resolved?.onboarding?.deviation.requestId ?? item.subjectId,
         at,
         actor: { kind: 'human', id: actor.employeeId },
         eventType: 'human_action',
@@ -211,20 +243,103 @@ export function createApprovalRoutes(deps: ApprovalApiDeps): RouteDefinition[] {
                 at,
               },
             });
+      // spec onboarding, rule 23: a deviation changes with its item, never on its own. Planned
+      // (and any conflict refused) before the first write.
+      const plan =
+        decides && item.kind === 'onboarding_deviation'
+          ? await planDeviation(resolved, body.action === 'approve')
+          : null;
+
       if (decides && !(await deps.approvals.saveIfStatus(saved, 'open'))) {
         throw new HttpError('already_decided');
       }
+      const restoreItem = async (): Promise<void> => {
+        if (decides) await deps.approvals.saveIfStatus(item, statusAfter).catch(() => false);
+      };
+      const restoreDeviation = plan === null ? null : await applyPlan(plan, restoreItem);
 
       try {
         await deps.audit.write(event);
       } catch {
         // Never leave a decision applied and unaudited (rule 12, OQ-7): restore, then 500.
-        if (decides) await deps.approvals.saveIfStatus(item, statusAfter).catch(() => false);
+        await restoreDeviation?.();
+        await restoreItem();
         throw new HttpError('internal_error');
       }
       return { item: saved, auditEventId: event.id };
     },
   });
+
+  async function planDeviation(
+    resolved: ResolvedSubject | null,
+    approve: boolean,
+  ): Promise<DeviationPlan> {
+    const subject = resolved?.onboarding;
+    if (subject === undefined) throw new HttpError('not_found'); // the resolver failed closed
+    const { deviation } = subject;
+    if (deviation.status !== 'pending') throw new HttpError('already_decided');
+    const nextDeviation = OnboardingDeviation.parse({
+      ...deviation,
+      status: approve ? 'applied' : 'rejected',
+    });
+    if (!approve) return { deviation, nextDeviation, checklist: null, nextChecklist: null };
+    // The current checklist: a completion may have saved a newer version since it was resolved.
+    const checklist = await deps.onboarding.getChecklist(deviation.checklistId);
+    if (checklist === null) throw new HttpError('not_found');
+    let applied: OnboardingChecklist;
+    try {
+      applied = applyDeviation(checklist, deviation);
+    } catch (err) {
+      if (err instanceof DeviationConflictError) throw new HttpError('action_not_allowed');
+      throw err;
+    }
+    const nextChecklist = OnboardingChecklist.parse({ ...applied, version: checklist.version + 1 });
+    return { deviation, nextDeviation, checklist, nextChecklist };
+  }
+
+  /**
+   * Checklist (approve only), then deviation, each conditional. A lost race restores what was
+   * written and refuses. Returns the undo for a later audit failure.
+   */
+  async function applyPlan(
+    plan: DeviationPlan,
+    restoreItem: () => Promise<void>,
+  ): Promise<() => Promise<void>> {
+    const { checklist, nextChecklist } = plan;
+    // A version bumped again on restore, so no reader sees the same version twice (chat D-5).
+    const restoreChecklist = async (): Promise<void> => {
+      if (checklist === null) return;
+      await deps.onboarding
+        .saveChecklistIfVersion(
+          { ...checklist, version: checklist.version + 2 },
+          checklist.version + 1,
+        )
+        .catch(() => false);
+    };
+    if (checklist !== null && nextChecklist !== null) {
+      const saved = await deps.onboarding
+        .saveChecklistIfVersion(nextChecklist, checklist.version)
+        .catch(() => false);
+      if (!saved) {
+        await restoreItem();
+        throw new HttpError('action_not_allowed');
+      }
+    }
+    const savedDeviation = await deps.onboarding
+      .saveDeviationIfStatus(plan.nextDeviation, 'pending')
+      .catch(() => false);
+    if (!savedDeviation) {
+      await restoreChecklist();
+      await restoreItem();
+      throw new HttpError('already_decided');
+    }
+    return async () => {
+      await deps.onboarding
+        .saveDeviationIfStatus(plan.deviation, plan.nextDeviation.status)
+        .catch(() => false);
+      await restoreChecklist();
+    };
+  }
 
   /**
    * spec policy-qa, rule 28 (after approval-queue rule 6 steps 1-6): only an open escalation

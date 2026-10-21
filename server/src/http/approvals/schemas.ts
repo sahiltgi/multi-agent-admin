@@ -1,6 +1,7 @@
 // Request and response schemas for the approval queue API (spec approval-queue, "Inputs and
 // outputs"). Domain schemas are reused, not redefined.
 import { z } from 'zod';
+import { OnboardingDeviation } from '../../domain/onboarding.js';
 import { PolicyQuestion, QaGateResult } from '../../domain/qa.js';
 import {
   ApprovalDecision,
@@ -11,6 +12,8 @@ import {
   Id,
   LeaveGateResult,
   LeaveRequest,
+  OnboardingGateResult,
+  OnboardingVerdict,
   Role,
 } from '../../domain/schemas.js';
 
@@ -22,6 +25,10 @@ export const EmptyQuery = empty;
 export const EmptyBody = empty;
 
 const leave = LeaveRequest.shape;
+
+/** A leave item's gate result, or an onboarding deviation's (spec onboarding OQ-10). */
+export const ItemGateResult = z.union([LeaveGateResult, OnboardingGateResult]);
+export type ItemGateResult = z.infer<typeof ItemGateResult>;
 
 // No `reason`: the leave reason is not shown in queue views (OQ-9).
 export const LeaveSubjectView = z
@@ -55,12 +62,29 @@ export const PolicyQuestionView = z
   .strict();
 export type PolicyQuestionView = z.infer<typeof PolicyQuestionView>;
 
+/**
+ * The proposed change an onboarding_deviation item decides (spec onboarding, rules 21, 23), so
+ * the manager sees exactly what an approve would apply. The rationale is model text: data only.
+ */
+export const DeviationView = z
+  .object({
+    deviationId: Id,
+    checklistId: Id,
+    change: OnboardingDeviation.shape.change,
+    rationale: OnboardingDeviation.shape.rationale,
+    status: OnboardingDeviation.shape.status,
+    proposedBy: Id, // an id only; no displayName or email
+  })
+  .strict();
+export type DeviationView = z.infer<typeof DeviationView>;
+
 export const ApprovalItemView = z
   .object({
     item: ApprovalItem,
     subject: LeaveSubjectView.nullable(), // null when the subject can't be resolved (rule 5)
-    gateResult: LeaveGateResult.nullable(), // the subject's stored gateResult, copied unchanged
+    gateResult: ItemGateResult.nullable(), // the subject's stored gateResult, copied unchanged
     question: PolicyQuestionView.nullable(), // null unless kind 'escalation'
+    deviation: DeviationView.nullable(), // null unless kind 'onboarding_deviation'
     canAct: z.boolean(),
   })
   .strict();
@@ -83,7 +107,10 @@ export const ActionBody = z.discriminatedUnion('action', [
       action: z.enum(['approve', 'reject', 'comment']),
       comment: z.string().trim().max(MAX_COMMENT_CHARS).optional(),
       seen: z
-        .object({ verdict: LeaveGateResult.shape.verdict, policyHash: z.string().min(1) })
+        .object({
+          verdict: z.union([LeaveGateResult.shape.verdict, OnboardingVerdict]),
+          policyHash: z.string().min(1),
+        })
         .strict(),
     })
     .strict(),
@@ -115,7 +142,7 @@ export const HumanActionPayload = z
     statusBefore: ApprovalStatus,
     statusAfter: ApprovalStatus,
     // not redacted: redaction can mask digits in policyHash. null for resolve (spec policy-qa).
-    gateResultSeen: LeaveGateResult.nullable(),
+    gateResultSeen: ItemGateResult.nullable(),
   })
   .strict()
   .refine((p) => (p.gateResultSeen === null) === (p.action === 'resolve'), {

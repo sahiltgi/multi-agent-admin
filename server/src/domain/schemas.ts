@@ -234,32 +234,124 @@ export type AuditEvent = z.infer<typeof AuditEvent>;
 export const TaskOwner = z.enum(['it', 'admin', 'manager', 'buddy']);
 export type TaskOwner = z.infer<typeof TaskOwner>;
 
+// Role templates and offsets (spec onboarding, rules 1, 2; OQ-8). Defined here, not in
+// domain/onboarding.ts, so ENTITY_SCHEMAS can hold the amended checklist without an import cycle.
+export const TEMPLATE_IDS = ['engineer', 'sales', 'operations'] as const;
+export const TemplateId = z.enum(TEMPLATE_IDS);
+export type TemplateId = z.infer<typeof TemplateId>;
+
+export const TemplateTaskId = z.string().regex(/^[a-z][a-z0-9-]{0,47}$/); // e.g. 'buddy-intro'
+export type TemplateTaskId = z.infer<typeof TemplateTaskId>;
+
+export const MIN_OFFSET_DAYS = -30;
+export const MAX_OFFSET_DAYS = 90;
+/** Whole calendar days from the start date (OQ-8). */
+export const DueOffsetDays = z.number().int().min(MIN_OFFSET_DAYS).max(MAX_OFFSET_DAYS);
+
 export const ChecklistTask = z
   .object({
-    id: Id,
-    title: z.string().trim().min(1),
+    id: Id, // the template task id, or 'added-<n>' for an approved addition
+    title: z.string().trim().min(1).max(120),
     owner: TaskOwner,
     ownerEmployeeId: Id.optional(),
     source: z.enum(['template', 'added']),
+    dueOffsetDays: DueOffsetDays,
+    dueDate: IsoDate, // computed by code, never by the model
+    dependsOn: z.array(Id),
     done: z.boolean(),
+    completedBy: Id.optional(), // set by the completion route only
+    completedAt: IsoDateTime.optional(),
+  })
+  .strict()
+  .refine((t) => t.done === (t.completedBy !== undefined && t.completedAt !== undefined), {
+    path: ['done'],
+    error: 'done must be set exactly when completedBy and completedAt are',
+  });
+export type ChecklistTask = z.infer<typeof ChecklistTask>;
+
+// ---- Onboarding gate result (spec onboarding, rules 3–9) ----
+// Here rather than in gate/, so http/ and onboarding/ never import /gate/ (policy-qa DD-23).
+export const OnboardingRuleId = z.enum([
+  'checklist_matches_template',
+  'no_tasks_added',
+  'no_tasks_removed',
+]);
+export type OnboardingRuleId = z.infer<typeof OnboardingRuleId>;
+
+export const OnboardingRuleResult = RuleResult.extend({ ruleId: OnboardingRuleId }).strict();
+export type OnboardingRuleResult = z.infer<typeof OnboardingRuleResult>;
+
+export const OnboardingVerdict = z.enum(['AUTO', 'MANAGER']);
+export type OnboardingVerdict = z.infer<typeof OnboardingVerdict>;
+
+export const OnboardingGateResult = z
+  .object({
+    verdict: OnboardingVerdict,
+    ruleResults: z.tuple([OnboardingRuleResult, OnboardingRuleResult, OnboardingRuleResult]),
+    reason: z.string().min(1),
+    policyVersion: z.string().min(1),
+    policyHash: z.string().regex(/^[a-f0-9]{64}$/),
   })
   .strict();
-export type ChecklistTask = z.infer<typeof ChecklistTask>;
+export type OnboardingGateResult = z.infer<typeof OnboardingGateResult>;
+
+/** Dependency ids that name no task in `tasks`. */
+export function unknownDependencies(
+  tasks: readonly { id: string; dependsOn: readonly string[] }[],
+): string[] {
+  const ids = new Set(tasks.map((t) => t.id));
+  return tasks.flatMap((t) => t.dependsOn.filter((d) => !ids.has(d)));
+}
+
+/** True when the dependency graph has a cycle (self-dependencies included). */
+export function hasDependencyCycle(
+  tasks: readonly { id: string; dependsOn: readonly string[] }[],
+): boolean {
+  const deps = new Map(tasks.map((t) => [t.id, t.dependsOn]));
+  const state = new Map<string, 'visiting' | 'done'>();
+  const visit = (id: string): boolean => {
+    const seen = state.get(id);
+    if (seen === 'visiting') return true;
+    if (seen === 'done') return false;
+    state.set(id, 'visiting');
+    for (const d of deps.get(id) ?? []) if (visit(d)) return true;
+    state.set(id, 'done');
+    return false;
+  };
+  return tasks.some((t) => visit(t.id));
+}
 
 export const OnboardingChecklist = z
   .object({
     id: Id,
-    newJoinerId: Id,
-    templateId: Id,
+    requestId: Id, // the turn that created it; also the trace id
+    newJoinerId: Id, // minted by idGen, never a directory id (OQ-9)
+    templateId: TemplateId,
     templateVersion: z.string().min(1),
+    policyHash: z.string().regex(/^[a-f0-9]{64}$/),
+    startDate: IsoDate,
+    newHireTeam: Id,
+    managerEmployeeId: Id, // Team.managerId of newHireTeam, resolved by code
+    buddyEmployeeId: Id.nullable(),
+    createdBy: Id,
     tasks: z.array(ChecklistTask).min(1),
     removedTemplateTaskIds: z.array(Id),
+    gateResult: OnboardingGateResult, // copied from the gate at creation
+    version: z.number().int().nonnegative(), // optimistic concurrency for approve and complete
     createdAt: IsoDateTime,
   })
   .strict()
   .refine((c) => new Set(c.tasks.map((t) => t.id)).size === c.tasks.length, {
     path: ['tasks'],
     error: 'task ids must be unique',
+  })
+  .refine((c) => unknownDependencies(c.tasks).length === 0, {
+    path: ['tasks'],
+    error: 'every dependsOn must name a task on the checklist',
+  })
+  .refine((c) => !hasDependencyCycle(c.tasks), {
+    path: ['tasks'],
+    error: 'task dependencies must not form a cycle',
   });
 export type OnboardingChecklist = z.infer<typeof OnboardingChecklist>;
 

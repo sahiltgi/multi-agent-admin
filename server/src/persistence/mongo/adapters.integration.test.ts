@@ -14,6 +14,11 @@ import {
   LeaveRequest,
   type LeaveGateResult,
 } from '../../domain/schemas.js';
+import type {
+  OnboardingChecklist,
+  OnboardingDeviation,
+  OnboardingStore,
+} from '../../domain/onboarding.js';
 import type { PolicyQuestion, PolicyQuestionStore } from '../../domain/qa.js';
 import {
   InMemoryApprovalStore,
@@ -353,6 +358,114 @@ function policyQuestionContract(label: string, make: () => Promise<PolicyQuestio
   });
 }
 
+// spec onboarding (OQ-14, mongo-persistence amendment): the OnboardingStore contract
+function mkChecklist(id: string): OnboardingChecklist {
+  const rule = (ruleId: 'checklist_matches_template' | 'no_tasks_added' | 'no_tasks_removed') => ({
+    ruleId,
+    passed: true,
+    expected: 'Synthetic expected',
+    actual: 'Synthetic actual',
+    message: 'Synthetic message.',
+  });
+  return {
+    id,
+    requestId: `req-${id}`,
+    newJoinerId: `nj-${id}`,
+    templateId: 'engineer',
+    templateVersion: 'v1',
+    policyHash: H,
+    startDate: '2026-12-01',
+    newHireTeam: 'team-a',
+    managerEmployeeId: 'emp-002',
+    buddyEmployeeId: null,
+    createdBy: 'emp-001',
+    tasks: [
+      {
+        id: 'laptop',
+        title: 'Prepare laptop',
+        owner: 'it',
+        source: 'template',
+        dueOffsetDays: -3,
+        dueDate: '2026-11-28',
+        dependsOn: [],
+        done: false,
+      },
+    ],
+    removedTemplateTaskIds: [],
+    gateResult: {
+      verdict: 'AUTO',
+      ruleResults: [
+        rule('checklist_matches_template'),
+        rule('no_tasks_added'),
+        rule('no_tasks_removed'),
+      ],
+      reason: 'Checklist matches the template.',
+      policyVersion: 'v1',
+      policyHash: H,
+    },
+    version: 0,
+    createdAt: NOW,
+  };
+}
+
+function mkDeviation(id: string, checklistId: string): OnboardingDeviation {
+  const checklist = mkChecklist(checklistId);
+  return {
+    id,
+    checklistId,
+    requestId: checklist.requestId,
+    change: { kind: 'remove', templateTaskId: 'laptop' },
+    rationale: 'Synthetic rationale',
+    status: 'pending',
+    gateResult: { ...checklist.gateResult, verdict: 'MANAGER' },
+    proposedBy: 'emp-001',
+    createdAt: NOW,
+  };
+}
+
+function onboardingContract(label: string, make: () => Promise<OnboardingStore>): void {
+  describe(`onboarding: ${label} OnboardingStore contract`, () => {
+    it('checklists: insert never overwrites; save needs the expected version; remove deletes', async () => {
+      const store = await make();
+      const c = mkChecklist(unique('chk'));
+      expect(await store.insertChecklist(c)).toBe(true);
+      expect(await store.insertChecklist({ ...c, newHireTeam: 'team-b' })).toBe(false);
+      expect(await store.getChecklist(c.id)).toEqual(c);
+      expect(hasStorageKeys(await store.getChecklist(c.id))).toBe(false);
+      expect(await store.getChecklist('{"$ne":null}')).toBeNull();
+      const next = { ...c, version: 1 };
+      expect(await store.saveChecklistIfVersion(next, 1)).toBe(false);
+      expect(await store.saveChecklistIfVersion(next, 0)).toBe(true);
+      expect(await store.saveChecklistIfVersion({ ...c, version: 2 }, 0)).toBe(false);
+      expect(await store.getChecklist(c.id)).toEqual(next);
+      await store.removeChecklist(c.id);
+      expect(await store.getChecklist(c.id)).toBeNull();
+    });
+
+    it('deviations: save needs the expected status; list by checklist keeps insertion order', async () => {
+      const store = await make();
+      const checklistId = unique('chk');
+      const a = mkDeviation(unique('dev-a'), checklistId);
+      const b = mkDeviation(unique('dev-b'), checklistId);
+      const other = mkDeviation(unique('dev-o'), unique('chk-other'));
+      for (const d of [a, b, other]) expect(await store.insertDeviation(d)).toBe(true);
+      expect(await store.insertDeviation({ ...a, rationale: 'changed' })).toBe(false);
+      expect(await store.getDeviation(a.id)).toEqual(a);
+      expect((await store.listDeviationsByChecklist(checklistId)).map((d) => d.id)).toEqual([
+        a.id,
+        b.id,
+      ]);
+      const applied = { ...a, status: 'applied' as const };
+      expect(await store.saveDeviationIfStatus(applied, 'rejected')).toBe(false);
+      expect(await store.saveDeviationIfStatus(applied, 'pending')).toBe(true);
+      expect(await store.saveDeviationIfStatus(a, 'applied')).toBe(true); // restore path
+      expect((await store.getDeviation(a.id))?.status).toBe('pending');
+      for (const d of [a, b, other]) await store.removeDeviation(d.id);
+      expect(await store.getDeviation(a.id)).toBeNull();
+    });
+  });
+}
+
 function idempotencyContract(label: string, make: () => Promise<IdempotencyStore>): void {
   describe(`AT-1: ${label} IdempotencyStore contract`, () => {
     it('AT-1: begin, conflict, replay, expiry at exactly 24h, and release', async () => {
@@ -501,6 +614,15 @@ leaveStoreContract('mongo', async (leaves) => {
   return new MongoLeaveRequestStore();
 });
 
+onboardingContract('in-memory', async () => {
+  const { InMemoryOnboardingStore } = await import('../../onboarding/in-memory.js');
+  return new InMemoryOnboardingStore();
+});
+onboardingContract('mongo', async () => {
+  const { MongoOnboardingStore } = await import('./onboarding.js');
+  return new MongoOnboardingStore();
+});
+
 policyQuestionContract('in-memory', async () => {
   const { InMemoryPolicyQuestionStore } = await import('../../intake/in-memory.js');
   return new InMemoryPolicyQuestionStore();
@@ -543,6 +665,7 @@ describe('mongo handle and adapters', () => {
       'idempotency',
       'leaveData',
       'leaveRequests',
+      'onboarding', // onboarding amendment
       'policyQuestions', // policy-qa amendment
     ]);
   });
@@ -554,6 +677,43 @@ describe('mongo handle and adapters', () => {
     for (const bad of ['EMP-004', ' emp-004', '{"$ne":null}', '.*']) {
       expect(await dir.getById(bad), bad).toBeNull();
     }
+  });
+
+  it('onboarding OQ-7: getTeamById matches only the exact seeded team id', async () => {
+    await seedTestDb();
+    const dir = new MongoEmployeeDirectory();
+    expect(await dir.getTeamById('team-a')).toEqual(fixtures.teams.find((t) => t.id === 'team-a'));
+    for (const bad of ['TEAM-A', ' team-a', '{"$ne":null}', '.*']) {
+      expect(await dir.getTeamById(bad), bad).toBeNull();
+    }
+  });
+
+  it('onboarding OQ-10: the resolver maps a deviation item to its deviation and checklist, owned by the proposer', async () => {
+    const { MongoOnboardingStore } = await import('./onboarding.js');
+    const onboarding = new MongoOnboardingStore();
+    const checklist = mkChecklist(unique('chk'));
+    const deviation = mkDeviation(unique('dev'), checklist.id);
+    expect(await onboarding.insertChecklist(checklist)).toBe(true);
+    expect(await onboarding.insertDeviation(deviation)).toBe(true);
+    const item = mkItem(unique('ai'), deviation.id, { kind: 'onboarding_deviation' });
+    const resolved = await new MongoLeaveRequestStore(null, onboarding).resolve(item);
+    expect(resolved).toEqual({
+      ownerEmployeeId: 'emp-001',
+      leave: null,
+      gateResult: deviation.gateResult,
+      policyQuestion: null,
+      onboarding: { deviation, checklist },
+    });
+    // Without the store, or for an unknown deviation, the item fails closed.
+    expect(await new MongoLeaveRequestStore().resolve(item)).toBeNull();
+    expect(
+      await new MongoLeaveRequestStore(null, onboarding).resolve({
+        ...item,
+        subjectId: 'dev-none',
+      }),
+    ).toBeNull();
+    await onboarding.removeDeviation(deviation.id);
+    await onboarding.removeChecklist(checklist.id);
   });
 
   it('AT-4: concurrent saveIfStatus on ai-001 has one winner; insert and remove behave', async () => {

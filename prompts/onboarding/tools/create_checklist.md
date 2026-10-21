@@ -1,0 +1,1 @@
+Build the new joiner's checklist from the role template, for the exact start date (YYYY-MM-DD) and team the message states, with the named buddy or null. Call it at most once, and only when every detail was stated. The checklist always equals the template; the tool never adds, removes or approves anything.

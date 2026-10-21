@@ -8,6 +8,7 @@ export { MongoEmployeeDirectory } from './directory.js';
 export { MongoIdempotencyStore } from './idempotency.js';
 export { MongoLeaveDataPort } from './leave-data.js';
 export { MongoLeaveRequestStore } from './leave-requests.js';
+export { MongoOnboardingStore } from './onboarding.js';
 export { MongoPolicyQuestionStore } from './policy-questions.js';
 export {
   ConversationModel,
@@ -15,6 +16,7 @@ export {
   IdempotencyRecordModel,
   MessageOwner,
   MessageOwnerModel,
+  OnboardingDeviationModel,
   PolicyQuestionModel,
 } from './models.js';
 export { StoredDocumentError } from './read.js';

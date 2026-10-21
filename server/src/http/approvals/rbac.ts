@@ -17,6 +17,11 @@ function assigneeMatches(item: ApprovalItem, actor: Actor): boolean {
 export function isAssignee(actor: Actor, { item, owner }: ItemContext): boolean {
   if (!assigneeMatches(item, actor)) return false;
   if (actor.role === 'manager') {
+    // spec onboarding OQ-10: a new joiner has no directory entry, so a deviation item goes to the
+    // manager it names. Every other kind uses the subject owner's manager.
+    if (item.kind === 'onboarding_deviation') {
+      return item.assigneeRole === 'manager' && item.assigneeId === actor.employeeId;
+    }
     return (
       item.assigneeRole === 'manager' && owner !== null && owner.managerId === actor.employeeId
     );
