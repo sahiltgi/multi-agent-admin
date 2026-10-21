@@ -1,15 +1,25 @@
-// EmployeeDirectory on MongoDB (spec mongo-persistence, rules 1 and 2).
-import { Employee } from '../../domain/schemas.js';
+// EmployeeDirectory on MongoDB (spec mongo-persistence, rules 1 and 2), plus the team lookup the
+// Onboarding Agent needs (spec onboarding OQ-7: the new joiner's manager is Team.managerId).
+import type { OnboardingDirectory } from '../../domain/onboarding.js';
+import { Employee, Team } from '../../domain/schemas.js';
 import type { EmployeeDirectory } from '../../http/approvals/ports.js';
 import { MODELS } from '../../models/index.js';
 import { literal, NO_STORAGE_KEYS, parseStored } from './read.js';
 
-export class MongoEmployeeDirectory implements EmployeeDirectory {
+export class MongoEmployeeDirectory implements EmployeeDirectory, OnboardingDirectory {
   /** Exact id match only: no trimming and no case folding (rule 2). */
   async getById(id: string): Promise<Employee | null> {
     const doc = await MODELS.Employee.findOne({ id: literal(id) }, NO_STORAGE_KEYS)
       .lean()
       .exec();
     return doc === null ? null : parseStored(Employee, 'employees', doc);
+  }
+
+  /** Exact id match only, as for employees. */
+  async getTeamById(id: string): Promise<Team | null> {
+    const doc = await MODELS.Team.findOne({ id: literal(id) }, NO_STORAGE_KEYS)
+      .lean()
+      .exec();
+    return doc === null ? null : parseStored(Team, 'teams', doc);
   }
 }

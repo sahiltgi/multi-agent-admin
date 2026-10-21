@@ -18,6 +18,7 @@ import {
 } from '../http/approvals/in-memory.js';
 import { createApprovalRoutes } from '../http/approvals/routes.js';
 import type { ApprovalApiDeps } from '../http/approvals/ports.js';
+import { InMemoryOnboardingStore } from '../onboarding/in-memory.js';
 import { fixtures } from '../seeds/fixtures.js';
 import {
   InMemoryIdempotencyStore,
@@ -153,6 +154,7 @@ function stubQuestions(): IntakeDeps['policyQuestions'] {
 interface WorldOptions {
   leaves?: LeaveRequest[];
   texts?: Partial<Record<'not_available' | 'escalated' | 'returned' | 'hr_admin_self', string>>;
+  onboardingTexts?: Partial<Record<'created' | 'pending_manager' | 'denied', string>>;
 }
 
 function makeWorld(opts: WorldOptions = {}) {
@@ -175,7 +177,10 @@ function makeWorld(opts: WorldOptions = {}) {
     auditReader: new InMemoryAuditReader(sink),
     clock: { nowIso: () => NOW },
     idGen,
+    onboarding: new InMemoryOnboardingStore(),
   };
+  // spec onboarding (OQ-14): an employee's onboarding message gets the fixed denied text.
+  const onboardingTexts = opts.onboardingTexts ?? { denied: 'DENIED-FIXTURE' };
   const intakeDeps: IntakeDeps = {
     directory,
     leaveRequests: leaveStore,
@@ -198,6 +203,9 @@ function makeWorld(opts: WorldOptions = {}) {
     runPolicyQa,
     policyQuestions: stubQuestions(),
     qaTexts: { load: () => Promise.resolve('QA-ESCALATED-FIXTURE') },
+    runOnboarding: () => Promise.reject(new Error('runOnboarding not used in these tests')),
+    onboarding: new InMemoryOnboardingStore(),
+    onboardingTexts: { load: (name) => Promise.resolve(onboardingTexts[name] ?? null) },
   };
   return {
     approvalDeps,
@@ -466,7 +474,9 @@ describe('dispatch', () => {
 
   it('AT-8: each non-leave label gets its fixed reply or question and runs no sub-agent', async () => {
     const cases: [Label, string, string][] = [
-      ['onboarding', 'reply', 'NOT-AVAILABLE-FIXTURE'], // policy_qa now runs the agent (policy-qa amendment)
+      // policy_qa now runs the agent (policy-qa amendment); onboarding is denied to an employee
+      // (onboarding OQ-14, which replaced the not_available reply).
+      ['onboarding', 'reply', 'DENIED-FIXTURE'],
       ['prohibited', 'reply', 'PROHIBITED-FIXTURE'],
       ['out_of_scope', 'reply', 'OUT-OF-SCOPE-FIXTURE'],
       ['unclear', 'question', 'Which request do you mean?'],
@@ -497,9 +507,11 @@ describe('dispatch', () => {
     expect(w.runLeave).toHaveBeenCalledTimes(1);
   });
 
-  it('AT-8: a missing not_available text takes the escalation path with no model text', async () => {
+  // Amended by onboarding OQ-14: the onboarding reply is the denied text, not not_available.
+  it('AT-8: a missing denied text takes the escalation path with no model text', async () => {
     const w = makeWorld({
       texts: { escalated: 'ESCALATED-FIXTURE', returned: 'RETURNED-FIXTURE' },
+      onboardingTexts: {},
     });
     w.classify.mockResolvedValue(D('onboarding'));
     const { post } = await boot(w);

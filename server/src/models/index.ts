@@ -18,6 +18,8 @@ import {
   LeaveType,
   LeaveVerdict,
   OnboardingChecklist,
+  OnboardingGateResult,
+  OnboardingVerdict,
   Role,
   RuleResult,
   Team,
@@ -196,7 +198,27 @@ const checklistTaskSchema = new Schema<ChecklistTask>(
     owner: requiredEnum(TaskOwner.options),
     ownerEmployeeId: optionalString,
     source: requiredEnum(ChecklistTask.shape.source.options),
+    dueOffsetDays: { type: Number, required: true },
+    dueDate: requiredString,
+    dependsOn: { type: [String], required: true },
     done: requiredBoolean,
+    completedBy: optionalString,
+    completedAt: optionalString,
+  },
+  SUBDOCUMENT,
+);
+
+// ruleResults is a fixed 3-tuple in Zod; storage keeps it as an array (parsed on read).
+type StoredOnboardingGateResult = Omit<OnboardingGateResult, 'ruleResults'> & {
+  ruleResults: RuleResult[];
+};
+const onboardingGateResultSchema = new Schema<StoredOnboardingGateResult>(
+  {
+    verdict: requiredEnum(OnboardingVerdict.options),
+    ruleResults: { type: [ruleResultSchema], required: true },
+    reason: requiredString,
+    policyVersion: requiredString,
+    policyHash: requiredString,
   },
   SUBDOCUMENT,
 );
@@ -204,11 +226,20 @@ const checklistTaskSchema = new Schema<ChecklistTask>(
 const onboardingChecklistSchema = new Schema<OnboardingChecklist>(
   {
     id: uniqueId,
+    requestId: requiredString,
     newJoinerId: requiredString,
     templateId: requiredString,
     templateVersion: requiredString,
+    policyHash: requiredString,
+    startDate: requiredString,
+    newHireTeam: requiredString,
+    managerEmployeeId: requiredString,
+    buddyEmployeeId: nullableString,
+    createdBy: requiredString,
     tasks: { type: [checklistTaskSchema], required: true },
     removedTemplateTaskIds: { type: [String], required: true },
+    gateResult: { type: onboardingGateResultSchema, required: true },
+    version: { type: Number, required: true, min: 0 },
     createdAt: requiredString,
   },
   TOP_LEVEL,

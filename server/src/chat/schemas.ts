@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { ClarifyingQuestion, RouteLabel } from '../agents/orchestrator/schemas.js';
 import { MAX_USER_TEXT_CHARS } from '../agents/schemas.js';
 import { QaVerdict, SectionId } from '../domain/qa.js';
-import { Id, IsoDateTime, LeaveVerdict, Role } from '../domain/schemas.js';
+import { Id, IsoDateTime, LeaveVerdict, OnboardingVerdict, Role } from '../domain/schemas.js';
 import { DispatchEscalation, FailedRule, MyRequestView } from '../intake/schemas.js';
 
 // ---- POST /chat body (rule 3) ----
@@ -28,6 +28,8 @@ export const ChatStatus = z.enum([
   'retry', // model_unavailable only (rule 17)
   'answered', // a gate-approved policy answer (spec policy-qa, rule 20)
   'escalated_to_hr', // a policy question passed to HR, with a PolicyQuestion and item (rule 21)
+  'checklist_created', // spec onboarding, rule 20: an AUTO template checklist
+  'pending_manager', // spec onboarding, rule 21: a checklist plus deviations awaiting the manager
 ]);
 export type ChatStatus = z.infer<typeof ChatStatus>;
 
@@ -43,6 +45,14 @@ export const ChatCard = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('returned'), failedRules: z.array(FailedRule) }).strict(),
   // spec policy-qa, rule 20: the section ids are copied from the Q&A gate output
   z.object({ kind: z.literal('policy_answer'), sectionIds: z.array(SectionId).min(1) }).strict(),
+  // spec onboarding, rules 20, 21: ids and a count only
+  z
+    .object({
+      kind: z.literal('onboarding_checklist'),
+      checklistId: Id,
+      pendingDeviations: z.number().int().nonnegative(),
+    })
+    .strict(),
 ]); // never the RecommendationCard: no summary, policyHash, model or promptVersion
 export type ChatCard = z.infer<typeof ChatCard>;
 
@@ -50,6 +60,8 @@ const CARD_KIND_FOR_STATUS: Partial<Record<ChatStatus, ChatCard['kind']>> = {
   leave_submitted: 'submitted',
   leave_returned: 'returned',
   answered: 'policy_answer',
+  checklist_created: 'onboarding_checklist',
+  pending_manager: 'onboarding_checklist',
 };
 
 /** A card is present iff the status maps to a card kind, and it is of that kind. */
@@ -175,6 +187,10 @@ export const ChatTurnPayload = z
     policyHash: z.string().nullable(), // copied from the card; unredacted (leave-agent D-16)
     qaVerdict: QaVerdict.nullable(), // copied from the Q&A gate (spec policy-qa, rule 25)
     policyQuestionId: Id.nullable(),
+    // spec onboarding (OQ-14): set only on an onboarding turn
+    onboardingVerdict: OnboardingVerdict.optional(), // copied from the onboarding gate
+    checklistId: Id.optional(),
+    pendingDeviations: z.number().int().nonnegative().optional(),
     injectionSuspected: z.boolean(), // OR over every agent run in the turn
   })
   .strict(); // no user text, reply, draft, question or reason

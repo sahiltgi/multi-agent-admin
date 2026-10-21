@@ -8,8 +8,15 @@ import { join } from 'node:path';
 import { POLICY_QA_CONFIG } from '../agents/policy_qa/config.js';
 import { createFileQaTexts, QA_TEXTS, type QaTextLoader } from '../agents/policy_qa/texts.js';
 import { handbookBody, handbookSections } from '../domain/handbook.js';
+import { ONBOARDING_CONFIG } from '../agents/onboarding/config.js';
+import {
+  createOnboardingTextLoader,
+  OnboardingAgentTextKey,
+  type OnboardingAgentTextLoader,
+} from '../agents/onboarding/texts.js';
+import type { LoadedOnboardingPolicy } from '../gate/onboarding-policy.schema.js';
 import type { LoadedQaPolicy } from '../gate/qa-policy.schema.js';
-import { loadQaPolicy } from '../policies/load.js';
+import { loadOnboardingPolicy, loadQaPolicy } from '../policies/load.js';
 import { LEAVE_CONFIG } from '../agents/leave/config.js';
 import { createFileTextLoader, LeaveTextKey, type FixedTextLoader } from '../agents/leave/texts.js';
 import { ORCHESTRATOR_CONFIG } from '../agents/orchestrator/config.js';
@@ -21,15 +28,22 @@ import { FixedMessageKey } from '../agents/orchestrator/schemas.js';
 import { createFilePromptLoader, type PromptLoader } from '../agents/prompts.js';
 import {
   loadLeaveToolDescriptions,
+  loadOnboardingToolDescriptions,
   loadToolDescriptions,
   LeaveToolDescriptions,
+  OnboardingToolDescriptions,
   type ToolDescriptions,
 } from '../agents/tool-descriptions.js';
 import type { ChatTextLoader } from '../chat/ports.js';
 import { ChatTextKey } from '../chat/schemas.js';
 import { createFileChatTexts } from '../chat/texts.js';
-import type { IntakeTextLoader, IntakeTextName } from '../intake/ports.js';
-import { createFileIntakeTexts } from '../intake/texts.js';
+import type {
+  IntakeTextLoader,
+  IntakeTextName,
+  OnboardingTextLoader,
+  OnboardingTextName,
+} from '../intake/ports.js';
+import { createFileIntakeTexts, createFileOnboardingTexts } from '../intake/texts.js';
 
 export interface BootFiles {
   descriptions: ToolDescriptions;
@@ -42,11 +56,18 @@ export interface BootFiles {
   qaTexts: QaTextLoader; // spec policy-qa, DD-21
   handbook: { body: string; hash: string }; // the document data and its SHA-256 (rule 1)
   qaPolicy: LoadedQaPolicy; // policies/qa/v1.yaml (rule 3)
+  // spec onboarding, rule 27
+  onboardingPolicy: LoadedOnboardingPolicy; // policies/onboarding/v1.yaml
+  onboardingToolDescriptions: OnboardingToolDescriptions;
+  onboardingAgentTexts: OnboardingAgentTextLoader; // the agent's fixed questions
+  onboardingTexts: OnboardingTextLoader; // dispatch's fixed replies
 }
 
 export interface QaBootPaths {
   handbookPath: string;
   qaPolicyPath: string;
+  /** Defaults to policies/onboarding/v1.yaml next to the prompts directory. */
+  onboardingPolicyPath?: string;
 }
 
 /** The committed handbook and QA policy, next to the prompts directory. */
@@ -64,6 +85,15 @@ const INTAKE_TEXTS = [
   'hr_admin_self',
   'hand_back',
 ] as const satisfies readonly IntakeTextName[];
+
+// spec onboarding, rule 27: dispatch's replies plus the agent's two questions. escalated.txt is a
+// required onboarding message file; onboarding escalations reply with the intake escalated text.
+const ONBOARDING_TEXTS = [
+  'created',
+  'pending_manager',
+  'denied',
+] as const satisfies readonly OnboardingTextName[];
+const ONBOARDING_MESSAGES = [...ONBOARDING_TEXTS, 'escalated', ...OnboardingAgentTextKey.options];
 
 /** Rejects naming the path when a file is missing, unreadable or blank. */
 async function requireText(path: string): Promise<void> {
@@ -99,7 +129,7 @@ export async function loadBootFiles(
   qaPaths: QaBootPaths = defaultQaBootPaths(promptsRoot),
 ): Promise<BootFiles> {
   const required = [
-    ...[ORCHESTRATOR_CONFIG, LEAVE_CONFIG, POLICY_QA_CONFIG].map((c) =>
+    ...[ORCHESTRATOR_CONFIG, LEAVE_CONFIG, POLICY_QA_CONFIG, ONBOARDING_CONFIG].map((c) =>
       join(promptsRoot, c.agentId, `${c.promptVersion}.md`),
     ),
     join(promptsRoot, 'orchestrator', 'tools', 'route.md'),
@@ -113,11 +143,18 @@ export async function loadBootFiles(
     ...INTAKE_TEXTS.map((n) => join(promptsRoot, 'intake', 'messages', `${n}.txt`)),
     ...ChatTextKey.options.map((k) => join(promptsRoot, 'chat', 'messages', `${k}.txt`)),
     ...QA_TEXTS.map((n) => join(promptsRoot, 'policy_qa', 'messages', `${n}.txt`)),
+    ...Object.keys(OnboardingToolDescriptions.shape).map((t) =>
+      join(promptsRoot, 'onboarding', 'tools', `${t}.md`),
+    ),
+    ...ONBOARDING_MESSAGES.map((n) => join(promptsRoot, 'onboarding', 'messages', `${n}.txt`)),
   ];
   for (const path of required) await requireText(path);
   const handbook = await loadHandbook(qaPaths.handbookPath);
   // PolicyLoadError names the path, kind and keys, never values from the file.
   const qaPolicy = loadQaPolicy(qaPaths.qaPolicyPath);
+  const onboardingPolicy = loadOnboardingPolicy(
+    qaPaths.onboardingPolicyPath ?? join(promptsRoot, '..', 'policies', 'onboarding', 'v1.yaml'),
+  );
 
   return {
     descriptions: await loadToolDescriptions(promptsRoot),
@@ -130,5 +167,9 @@ export async function loadBootFiles(
     qaTexts: createFileQaTexts(join(promptsRoot, 'policy_qa', 'messages')),
     handbook,
     qaPolicy,
+    onboardingPolicy,
+    onboardingToolDescriptions: await loadOnboardingToolDescriptions(promptsRoot),
+    onboardingAgentTexts: createOnboardingTextLoader(join(promptsRoot, 'onboarding', 'messages')),
+    onboardingTexts: createFileOnboardingTexts(join(promptsRoot, 'onboarding', 'messages')),
   };
 }

@@ -20,6 +20,7 @@ import {
   InMemoryPolicyQuestionStore,
 } from '../intake/in-memory.js';
 import { loadLeavePolicy } from '../policies/load.js';
+import { InMemoryOnboardingStore } from '../onboarding/in-memory.js';
 import { fixtures } from '../seeds/fixtures.js';
 import { buildApp, type ServerParts, type ServerStores } from './app.js';
 import { loadBootFiles } from './boot.js';
@@ -118,6 +119,7 @@ function makeWorld(
       getTeamSize: () => Promise.resolve(1),
     },
     policyQuestions: new InMemoryPolicyQuestionStore(), // policy-qa amendment
+    onboarding: new InMemoryOnboardingStore(), // onboarding OQ-14
   };
   const create = vi.fn<ModelClient['create']>();
   if (opts.modelError !== undefined) create.mockRejectedValue(opts.modelError);
@@ -224,7 +226,7 @@ describe('buildApp', () => {
     expect(w.sink.events).toHaveLength(0);
   });
 
-  it('AT-14: the route table is the four approval-queue routes plus POST /messages, GET /my-requests, POST /chat and GET /conversations/:id (chat-endpoint amendment)', () => {
+  it('AT-14: the route table is the four approval-queue routes plus POST /messages, GET /my-requests, POST /chat, GET /conversations/:id (chat-endpoint amendment) and the two onboarding routes (onboarding amendment)', () => {
     const w = makeWorld();
     expect(routeTable(buildApp(w.parts))).toEqual(
       [
@@ -236,6 +238,8 @@ describe('buildApp', () => {
         'GET /my-requests',
         'POST /chat',
         'GET /conversations/:id',
+        'GET /onboarding/checklists/:checklistId', // onboarding OQ-14
+        'POST /onboarding/checklists/:checklistId/tasks/:taskId/complete',
       ].sort(),
     );
   });

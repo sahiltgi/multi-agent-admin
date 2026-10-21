@@ -15,6 +15,7 @@ import {
 } from '../http/approvals/in-memory.js';
 import { InMemoryIdempotencyStore, InMemoryLeaveRequestStore } from '../intake/in-memory.js';
 import { loadLeavePolicy } from '../policies/load.js';
+import { InMemoryOnboardingStore } from '../onboarding/in-memory.js';
 import { fixtures } from '../seeds/fixtures.js';
 import { buildApp, type ServerParts, type ServerStores } from './app.js';
 import { loadBootFiles } from './boot.js';
@@ -72,6 +73,7 @@ async function world() {
       getTeamDayCounts: () => Promise.resolve([]),
       getTeamSize: () => Promise.resolve(1),
     },
+    onboarding: new InMemoryOnboardingStore(), // onboarding OQ-14
   } as unknown as ServerStores;
   const classify = vi.fn((input: { requestId: string }) =>
     Promise.resolve({
@@ -150,7 +152,7 @@ function routeTable(app: ReturnType<typeof buildApp>): string[] {
 }
 
 describe('buildApp with chat', () => {
-  it('AT-31: the route table is exactly the four approval-queue routes, /messages, /my-requests, /chat and /conversations/:id', async () => {
+  it('AT-31: the route table is exactly the four approval-queue routes, /messages, /my-requests, /chat, /conversations/:id and the two onboarding routes (onboarding amendment)', async () => {
     const { app } = await world();
     expect(routeTable(app)).toEqual(
       [
@@ -162,6 +164,8 @@ describe('buildApp with chat', () => {
         'GET /my-requests',
         'POST /chat',
         'GET /conversations/:id',
+        'GET /onboarding/checklists/:checklistId', // onboarding OQ-14
+        'POST /onboarding/checklists/:checklistId/tasks/:taskId/complete',
       ].sort(),
     );
   });

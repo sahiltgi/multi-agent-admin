@@ -977,6 +977,8 @@ Each item names the clause it changes. The amendments take effect when this spec
 
 - No change. `ENTITY_SCHEMAS` and `MODELS` keep exactly 8 keys (AT-1, AT-17).
 
+- **Amended by `specs/onboarding.md` OQ-14 (accepted by the owner on 2026-10-21):** `/chat` runs onboarding through the shared dispatcher as a single turn (onboarding OQ-12), so `Conversation.activeAgent` stays `'leave' | null`. `ChatStatus` gains `checklist_created` and `pending_manager`, both with an `onboarding_checklist` card `{ checklistId, pendingDeviations }`. `ChatTurnPayload` gains the optional `checklistId`, `pendingDeviations` and `onboardingVerdict` from `IntakePayload` (onboarding ID-8). An employee's or manager's onboarding message gets the `denied` text instead of `not_available`.
+
 ## Open questions
 
 None.

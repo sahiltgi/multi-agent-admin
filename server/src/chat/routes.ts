@@ -48,6 +48,7 @@ interface TurnResult {
   records: RecordParts;
   submit?: Extract<Outcome, { kind: 'submit' }>;
   policyEscalation?: Extract<Outcome, { kind: 'policy_escalate' }>; // spec policy-qa, rule 22
+  onboarding?: Extract<Outcome, { kind: 'onboarding' }>; // spec onboarding, rule 22
 }
 
 const internalError = (): HttpError => new HttpError('internal_error');
@@ -359,6 +360,22 @@ export function createChatRoutes(deps: ChatDeps): RouteDefinition[] {
               policyEscalation: outcome,
             };
             break;
+          case 'onboarding':
+            // spec onboarding, rules 20, 21: the fixed text, plus ids and a count.
+            result = {
+              status: outcome.deviations.length === 0 ? 'checklist_created' : 'pending_manager',
+              reply: outcome.text,
+              card: {
+                kind: 'onboarding_checklist',
+                checklistId: outcome.checklist.id,
+                pendingDeviations: outcome.deviations.length,
+              },
+              escalation: null,
+              draftAfter: null,
+              records: outcome.records,
+              onboarding: outcome,
+            };
+            break;
           case 'submit':
             result = {
               status: 'leave_submitted',
@@ -446,6 +463,15 @@ export function createChatRoutes(deps: ChatDeps): RouteDefinition[] {
           .writePolicyEscalation(result.policyEscalation.question, result.policyEscalation.item)
           .catch(() => ({ ok: false as const, failed: 'request' as const }));
         if (!written.ok) return fail('store_error'); // a failed item already removed the question
+        removeRecords = written.undo;
+      }
+      if (result.onboarding !== undefined) {
+        // spec onboarding, rule 22: checklist, deviations, items, then the conversation and event.
+        const { checklist, deviations, items } = result.onboarding;
+        const written = await dispatcher
+          .writeOnboarding(checklist, deviations, items)
+          .catch(() => ({ ok: false as const, failed: 'request' as const }));
+        if (!written.ok) return fail('store_error'); // a failed write already removed the rest
         removeRecords = written.undo;
       }
       let saved: boolean;

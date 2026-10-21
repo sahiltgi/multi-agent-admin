@@ -94,16 +94,47 @@ const validTask = {
   title: 'Laptop',
   owner: 'it',
   source: 'template',
+  dueOffsetDays: -3,
+  dueDate: '2026-11-28',
+  dependsOn: [],
   done: false,
 };
 
+// Amended by specs/onboarding.md OQ-6 (2026-10-21): the checklist carries its gate result,
+// start date, assignees and version.
+const onboardingRule = (ruleId: string) => ({
+  ruleId,
+  passed: true,
+  expected: 'synthetic expected',
+  actual: 'synthetic actual',
+  message: 'Synthetic message.',
+});
 const validChecklist = {
   id: 'ob-001',
-  newJoinerId: 'emp-020',
-  templateId: 'tpl-eng',
-  templateVersion: '1',
+  requestId: 'req-001',
+  newJoinerId: 'nj-001',
+  templateId: 'engineer',
+  templateVersion: 'v1',
+  policyHash: 'a'.repeat(64),
+  startDate: '2026-12-01',
+  newHireTeam: 'team-a',
+  managerEmployeeId: 'emp-002',
+  buddyEmployeeId: null,
+  createdBy: 'emp-001',
   tasks: [validTask],
   removedTemplateTaskIds: [],
+  gateResult: {
+    verdict: 'AUTO',
+    ruleResults: [
+      onboardingRule('checklist_matches_template'),
+      onboardingRule('no_tasks_added'),
+      onboardingRule('no_tasks_removed'),
+    ],
+    reason: 'Checklist matches the template.',
+    policyVersion: 'v1',
+    policyHash: 'a'.repeat(64),
+  },
+  version: 0,
   createdAt: '2026-11-01T09:00:00Z',
 };
 

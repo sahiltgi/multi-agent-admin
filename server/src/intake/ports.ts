@@ -2,6 +2,7 @@
 // in-memory implementations sit in ./in-memory.ts. MongoDB adapters come with mongo-persistence.
 import type { AuditSink } from '../agents/audit.js';
 import type { LeaveAgentResult, LeaveInput } from '../agents/leave/schemas.js';
+import type { OnboardingInput } from '../agents/onboarding/schemas.js';
 import type {
   OrchestratorFailure,
   OrchestratorInput,
@@ -9,6 +10,7 @@ import type {
 } from '../agents/orchestrator/schemas.js';
 import type { PolicyQaInput, PolicyQaResult } from '../agents/policy_qa/schemas.js';
 import type { QaTextLoader } from '../agents/policy_qa/texts.js';
+import type { OnboardingStore } from '../domain/onboarding.js';
 import type { PolicyQuestionStore } from '../domain/qa.js';
 import type { ApprovalItem, LeaveRequest } from '../domain/schemas.js';
 import type { ApprovalStore, EmployeeDirectory } from '../http/approvals/ports.js';
@@ -45,6 +47,14 @@ export interface IntakeTextLoader {
 export type IdempotencyBegin =
   { kind: 'new' } | { kind: 'replay'; status: number; body: unknown } | { kind: 'conflict' };
 
+/** prompts/onboarding/messages: the fixed onboarding replies (spec onboarding, rules 19–21). */
+export type OnboardingTextName = 'created' | 'pending_manager' | 'denied';
+
+export interface OnboardingTextLoader {
+  /** The fixed text, or null when it is missing or blank (fail closed). */
+  load(name: OnboardingTextName): Promise<string | null>;
+}
+
 export interface IdempotencyStore {
   /** Claims (employeeId, key) for a message; textHash is a hash, never the text (D-11). */
   begin(
@@ -74,4 +84,8 @@ export interface IntakeDeps {
   policyQuestions: PolicyQuestionStore;
   /** prompts/policy_qa/messages: the fixed "passed to HR" text (DD-21, DD-23). */
   qaTexts: QaTextLoader;
+  /** The Onboarding Agent, run once for an hr_admin's onboarding label (spec onboarding, rule 19). */
+  runOnboarding: (input: OnboardingInput) => Promise<unknown>; // parsed by dispatch, never trusted
+  onboarding: OnboardingStore;
+  onboardingTexts: OnboardingTextLoader;
 }

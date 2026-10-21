@@ -23,6 +23,7 @@ import type { ApprovalApiDeps } from '../http/approvals/ports.js';
 import { ListApprovalsResponse, TraceResponse } from '../http/approvals/schemas.js';
 import { createApp } from '../http/app.js';
 import { ErrorBody } from '../http/errors.js';
+import { InMemoryOnboardingStore } from '../onboarding/in-memory.js';
 import { fixtures } from '../seeds/fixtures.js';
 import {
   InMemoryIdempotencyStore,
@@ -232,6 +233,10 @@ function makeWorld(opts: WorldOptions = {}) {
       remove: () => Promise.resolve(),
     },
     qaTexts: { load: () => Promise.resolve('QA-ESCALATED-FIXTURE') },
+    // spec onboarding (OQ-14): onboarding dispatch deps; these tests never run the agent.
+    runOnboarding: () => Promise.reject(new Error('runOnboarding not used in these tests')),
+    onboarding: new InMemoryOnboardingStore(),
+    onboardingTexts: { load: () => Promise.resolve('DENIED-FIXTURE') },
   };
   const approvalDeps: ApprovalApiDeps = {
     directory,
@@ -241,6 +246,7 @@ function makeWorld(opts: WorldOptions = {}) {
     auditReader: new InMemoryAuditReader(sink),
     clock,
     idGen: () => `ae-${String((state.approvalCounter += 1)).padStart(3, '0')}`,
+    onboarding: new InMemoryOnboardingStore(),
   };
   return { intakeDeps, approvalDeps, sink, log, state, leaves, approvals, classify, runLeave };
 }

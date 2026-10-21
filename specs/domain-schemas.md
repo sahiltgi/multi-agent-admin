@@ -360,6 +360,8 @@ Answers to the former open questions, approved by the owner on 2026-10-14.
 
 - **Amended by `specs/request-intake.md` (2026-10-16):** D-1 changes `RuleResult` to the gate's shape `{ ruleId, passed, expected, actual, message }`, so a gate result is stored exactly as returned. D-8 adds optional `summary` (trimmed, non-empty) and `summarySource` (`'model' | 'fallback'`) to `LeaveRequest`. The Mongoose schemas follow.
 
+- **Amended by `specs/onboarding.md` OQ-14 (accepted by the owner on 2026-10-21):** `ChecklistTask` gains `dueOffsetDays` (integer, −30..90), `dueDate` (`IsoDate`), `dependsOn` (`Id[]`), and optional `completedBy`/`completedAt`, with a refine that `done` holds exactly when both completion fields are set. `OnboardingChecklist` gains `requestId`, `policyHash`, `startDate`, `newHireTeam`, `managerEmployeeId`, `buddyEmployeeId` (nullable), `createdBy`, `gateResult` (`OnboardingGateResult`), `version`, and `templateId` becomes the `TemplateId` enum (`engineer | sales | operations`). Refines: unique task ids, every `dependsOn` names a task on the checklist, no cycles. `OnboardingRuleResult`, `OnboardingVerdict` (`AUTO | MANAGER`) and `OnboardingGateResult` live in `server/src/domain/schemas.ts` (re-exported from `server/src/domain/onboarding.ts`, which avoids an import cycle; onboarding ID-1). `OnboardingDeviation` is storage-only, outside `ENTITY_SCHEMAS` and `MODELS`, which keep exactly 8 keys. The Mongoose schemas follow, and the AT-16 fixtures gain the new fields.
+
 ## Open questions
 
 None.
