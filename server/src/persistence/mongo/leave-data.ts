@@ -2,24 +2,11 @@
 // leave-gate D-11). Reads only; every count is computed here, never a verdict.
 import type { DateRange } from '../../agents/leave/schemas.js';
 import type { LeaveDataPort } from '../../agents/leave/port.js';
+import { COUNTED_STATUSES, countTeamDays } from '../../agents/leave/team-days.js';
 import type { TeamDayCount } from '../../gate/leave.js';
 import { Employee, Holiday, LeaveBalance, LeaveRequest } from '../../domain/schemas.js';
 import { MODELS } from '../../models/index.js';
 import { literal, NO_STORAGE_KEYS, parseAllStored, parseStored } from './read.js';
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-/** Statuses that count as away in othersOnLeave (D-14). */
-export const COUNTED_STATUSES = ['approved', 'pending_approval'] as const;
-
-function dayMs(isoDate: string): number {
-  const [y, m, d] = isoDate.split('-').map(Number);
-  return Date.UTC(y ?? 0, (m ?? 1) - 1, d ?? 1);
-}
-
-function isoDay(ms: number): string {
-  return new Date(ms).toISOString().slice(0, 10);
-}
 
 export class MongoLeaveDataPort implements LeaveDataPort {
   /** The requester, or a rejection for an unknown id. */
@@ -87,21 +74,7 @@ export class MongoLeaveDataPort implements LeaveDataPort {
         .lean()
         .exec(),
     );
-    const from = dayMs(range.from);
-    const to = dayMs(range.to);
-    const away = new Map<number, Set<string>>();
-    for (const leave of leaves) {
-      const start = Math.max(dayMs(leave.startDate), from);
-      const end = Math.min(dayMs(leave.endDate), to);
-      for (let t = start; t <= end; t += DAY_MS) {
-        const who = away.get(t) ?? new Set<string>();
-        who.add(leave.employeeId);
-        away.set(t, who);
-      }
-    }
-    return [...away.entries()]
-      .sort(([a], [b]) => a - b)
-      .map(([t, who]) => ({ date: isoDay(t), othersOnLeave: who.size }));
+    return countTeamDays(leaves, range);
   }
 
   /** Team members including the requester (leave-gate D-11); 1 with no team (D-14). */

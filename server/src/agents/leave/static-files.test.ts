@@ -2,10 +2,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { evaluateLeave, type LeaveGateContext, type TeamDayCount } from '../../gate/leave.js';
-import { COUNTED_STATUSES } from '../../persistence/mongo/leave-data.js';
 import { loadLeavePolicy } from '../../policies/load.js';
 import { fixtures } from '../../seeds/fixtures.js';
 import { LeaveEvalCase } from './schemas.js';
+import { COUNTED_STATUSES } from './team-days.js';
 
 const CASES = fileURLToPath(new URL('../../../../evals/leave/cases.jsonl', import.meta.url));
 const POLICY = fileURLToPath(new URL('../../../../policies/leave/v1.yaml', import.meta.url));

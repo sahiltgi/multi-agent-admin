@@ -11,6 +11,25 @@ export type AnthropicEnv = z.infer<typeof AnthropicEnv>;
 
 const ANTHROPIC_BASE_URL = 'https://api.anthropic.com';
 
+// Request timeout, rate limit and every server-side failure, including 529 overloaded.
+const isUnavailableStatus = (status: number): boolean =>
+  status === 408 || status === 429 || status >= 500;
+
+/**
+ * True for a transient model API failure: a timeout, an abort, a network error, a rate limit or a
+ * server error (spec eval-runner, rule 15). The SDK's connection, timeout and abort errors have no
+ * status and a generic name, so they are recognised by class. Reads no message text.
+ */
+export function isModelUnavailable(err: unknown): boolean {
+  if (err instanceof Anthropic.APIConnectionError || err instanceof Anthropic.APIUserAbortError) {
+    return true;
+  }
+  const status =
+    typeof err === 'object' && err !== null ? (err as { status?: unknown }).status : undefined;
+  if (typeof status === 'number') return isUnavailableStatus(status);
+  return err instanceof Error && /^(?:AbortError|TimeoutError)$/.test(err.name);
+}
+
 export function createAnthropicClient(env: unknown): ModelClient {
   const parsed = AnthropicEnv.safeParse(env);
   // A fixed message: Zod's own error could echo the received value.
