@@ -32,6 +32,7 @@ export const SEED_CLEARED = [
   'policyQuestions', // spec policy-qa, rule 26: their escalation items are cleared too
   'onboardingChecklists', // spec onboarding (OQ-14): their deviation items are cleared too
   'onboardingDeviations',
+  'newJoinerProfiles', // spec onboarding-api, rule 20: a profile points at a cleared checklist
 ] as const;
 export type SeedClearedCollection = (typeof SEED_CLEARED)[number];
 

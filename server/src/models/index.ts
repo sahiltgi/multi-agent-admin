@@ -24,6 +24,7 @@ import {
   RuleResult,
   Team,
   TaskOwner,
+  type TaskBlock,
 } from '../domain/schemas.js';
 
 // `id: false` turns off Mongoose's `id` virtual, which would collide with our own `id` field.
@@ -191,6 +192,12 @@ auditEventSchema.pre('save', function () {
   if (!this.isNew) refuseAuditChange();
 });
 
+// onboarding-api rule 15: the optional block on a task (absent unless the status route sets it).
+const taskBlockSchema = new Schema<TaskBlock>(
+  { reason: requiredString, blockedBy: requiredString, blockedAt: requiredString },
+  SUBDOCUMENT,
+);
+
 const checklistTaskSchema = new Schema<ChecklistTask>(
   {
     id: requiredString,
@@ -204,6 +211,7 @@ const checklistTaskSchema = new Schema<ChecklistTask>(
     done: requiredBoolean,
     completedBy: optionalString,
     completedAt: optionalString,
+    blocked: { type: taskBlockSchema, required: false },
   },
   SUBDOCUMENT,
 );
@@ -244,6 +252,10 @@ const onboardingChecklistSchema = new Schema<OnboardingChecklist>(
   },
   TOP_LEVEL,
 );
+// onboarding-api rule 20: the list route's order and its two visibility predicates.
+onboardingChecklistSchema.index({ startDate: 1, id: 1 });
+onboardingChecklistSchema.index({ managerEmployeeId: 1 });
+onboardingChecklistSchema.index({ 'tasks.ownerEmployeeId': 1 });
 
 // Collection names are set explicitly so they match the seed's collection names.
 export const EmployeeModel = model<Employee>('Employee', employeeSchema, 'employees');

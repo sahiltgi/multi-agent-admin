@@ -5,7 +5,14 @@ import { z } from 'zod';
 import { Id, Role } from '../domain/schemas.js';
 
 // ---- primitives ----
-export const AgentId = z.enum(['orchestrator', 'leave', 'policy_qa', 'onboarding']);
+// 'onboarding_notes': the notes-mode Onboarding Agent behind POST /onboarding (spec onboarding-api, rule 4).
+export const AgentId = z.enum([
+  'orchestrator',
+  'leave',
+  'policy_qa',
+  'onboarding',
+  'onboarding_notes',
+]);
 export type AgentId = z.infer<typeof AgentId>;
 
 export const ToolName = z.string().regex(/^[a-z][a-z0-9_]{0,63}$/);

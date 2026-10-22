@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { POLICY_QA_CONFIG } from '../agents/policy_qa/config.js';
 import { createFileQaTexts, QA_TEXTS, type QaTextLoader } from '../agents/policy_qa/texts.js';
 import { handbookBody, handbookSections } from '../domain/handbook.js';
-import { ONBOARDING_CONFIG } from '../agents/onboarding/config.js';
+import { ONBOARDING_CONFIG, ONBOARDING_NOTES_CONFIG } from '../agents/onboarding/config.js';
 import {
   createOnboardingTextLoader,
   OnboardingAgentTextKey,
@@ -25,7 +25,7 @@ import {
   type FixedMessageLoader,
 } from '../agents/orchestrator/messages.js';
 import { FixedMessageKey } from '../agents/orchestrator/schemas.js';
-import { createFilePromptLoader, type PromptLoader } from '../agents/prompts.js';
+import { createFilePromptLoader, promptFiles, type PromptLoader } from '../agents/prompts.js';
 import {
   loadLeaveToolDescriptions,
   loadOnboardingToolDescriptions,
@@ -147,6 +147,12 @@ export async function loadBootFiles(
       join(promptsRoot, 'onboarding', 'tools', `${t}.md`),
     ),
     ...ONBOARDING_MESSAGES.map((n) => join(promptsRoot, 'onboarding', 'messages', `${n}.txt`)),
+    // spec onboarding-api, rule 4: the notes-mode prompt and its data-block description.
+    ...promptFiles(
+      promptsRoot,
+      ONBOARDING_NOTES_CONFIG.agentId,
+      ONBOARDING_NOTES_CONFIG.promptVersion,
+    ),
   ];
   for (const path of required) await requireText(path);
   const handbook = await loadHandbook(qaPaths.handbookPath);

@@ -1,4 +1,4 @@
-// Storage-only records for the three non-entity collections (spec mongo-persistence, rules 5 and 6;
+// Storage-only records for the non-entity collections (spec mongo-persistence, rules 5 and 6;
 // D-10, D-16). They live here, outside ENTITY_SCHEMAS and MODELS, which keep exactly 8 keys.
 import { Schema, model } from 'mongoose';
 import { z } from 'zod';
@@ -151,4 +151,28 @@ const onboardingDeviationSchema = new Schema<StoredOnboardingDeviation>(
 export const OnboardingDeviationModel = model<StoredOnboardingDeviation>(
   'OnboardingDeviation',
   onboardingDeviationSchema,
+);
+
+// ---- NewJoinerProfile (spec onboarding-api, rule 20; OQ-5) ----
+// Storage-only, outside ENTITY_SCHEMAS and MODELS. The Zod schema in domain/onboarding.ts is
+// applied on every write and read. The only place a new joiner's name is stored.
+interface StoredNewJoinerProfile {
+  newJoinerId: string;
+  checklistId: string;
+  displayName: string;
+  createdAt: string;
+}
+
+const newJoinerProfileSchema = new Schema<StoredNewJoinerProfile>(
+  {
+    newJoinerId: { type: String, required: true, unique: true },
+    checklistId: { type: String, required: true },
+    displayName: { type: String, required: true },
+    createdAt: { type: String, required: true },
+  },
+  { ...TOP_LEVEL, collection: 'newJoinerProfiles' },
+);
+export const NewJoinerProfileModel = model<StoredNewJoinerProfile>(
+  'NewJoinerProfile',
+  newJoinerProfileSchema,
 );

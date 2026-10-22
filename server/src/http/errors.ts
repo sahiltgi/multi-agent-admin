@@ -18,6 +18,7 @@ export const ErrorCode = z.enum([
   'conversation_full', // chat-endpoint D-7
   'dependencies_incomplete', // spec onboarding, rule 24 (OQ-5)
   'already_done', // spec onboarding, rule 24
+  'invalid_transition', // spec onboarding-api, rule 14 (OQ-3)
   'internal_error',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
@@ -63,6 +64,7 @@ const ERRORS: Record<ErrorCode, { status: number; message: string }> = {
   conversation_full: { status: 409, message: 'This conversation is full. Please start a new one.' },
   dependencies_incomplete: { status: 409, message: "This task's dependencies aren't done yet." },
   already_done: { status: 409, message: 'This task is already done.' },
+  invalid_transition: { status: 409, message: "This task can't move to that status." },
   internal_error: { status: 500, message: 'Something went wrong.' },
 };
 

@@ -4,7 +4,15 @@
 //   loadBootFiles(promptsRoot, { handbookPath, qaPolicyPath, onboardingPolicyPath }) loads the
 //   onboarding policy, prompts/onboarding/v1.md, prompts/onboarding/tools/<tool>.md and
 //   prompts/onboarding/messages/<name>.txt, and returns the policy as `onboardingPolicy`.
-import { existsSync, readdirSync, readFileSync, cpSync, mkdtempSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  cpSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -64,6 +72,51 @@ describe('onboarding AT-35: boot files', () => {
     expect(existsSync(file), `${file} must be committed`).toBe(true);
     rmSync(file, { force: true });
     await expect(loadBootFiles(root, paths() as never)).rejects.toThrow(file);
+  });
+});
+
+// onboarding-api AT-23 (rule 4, onboarding rule 27 pattern): the notes-mode files are boot files.
+describe('onboarding-api AT-23: notes-mode boot files', () => {
+  const NOTES_FILES: string[][] = [
+    ['notes-v1.md'],
+    ['notes_context.md'],
+    ['messages', 'no_changes.txt'],
+  ];
+
+  it.each(NOTES_FILES)(
+    'AT-23: a missing prompts/onboarding/%s file rejects naming its path only',
+    async (...parts: string[]) => {
+      const repoFile = join(PROMPTS_ROOT, 'onboarding', ...parts);
+      expect(existsSync(repoFile), `${repoFile} must be committed`).toBe(true);
+      const root = copyOfPrompts();
+      const file = join(root, 'onboarding', ...parts);
+      rmSync(file, { force: true });
+      const err = await loadBootFiles(root, paths() as never).then(
+        () => null,
+        (e: unknown) => e as Error,
+      );
+      expect(err?.message).toContain(file);
+    },
+  );
+
+  it.each(NOTES_FILES)(
+    'AT-23: a blank prompts/onboarding/%s file rejects naming its path',
+    async (...parts: string[]) => {
+      const root = copyOfPrompts();
+      const file = join(root, 'onboarding', ...parts);
+      expect(existsSync(file), `${file} must be committed`).toBe(true);
+      writeFileSync(file, '  \n\t\n');
+      await expect(loadBootFiles(root, paths() as never)).rejects.toThrow(file);
+    },
+  );
+
+  it('AT-23: the committed files load, and the no_changes sentence is the same text the prompt tests assume is non-blank', async () => {
+    await expect(loadBootFiles(PROMPTS_ROOT, paths())).resolves.toBeDefined();
+    const sentence = readFileSync(
+      join(PROMPTS_ROOT, 'onboarding', 'messages', 'no_changes.txt'),
+      'utf8',
+    );
+    expect(sentence.trim()).not.toBe('');
   });
 });
 

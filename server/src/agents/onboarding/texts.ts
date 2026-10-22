@@ -5,7 +5,12 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 
-export const OnboardingAgentTextKey = z.enum(['fallback_question', 'start_date_past']);
+// no_changes: the fixed sentence the notes-mode agent ends with when nothing changes (onboarding-api rule 4).
+export const OnboardingAgentTextKey = z.enum([
+  'fallback_question',
+  'start_date_past',
+  'no_changes',
+]);
 export type OnboardingAgentTextKey = z.infer<typeof OnboardingAgentTextKey>;
 
 export type OnboardingTextLoadResult = { found: true; text: string } | { found: false };

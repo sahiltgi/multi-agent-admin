@@ -29,6 +29,7 @@ import {
   ConversationModel,
   IdempotencyRecordModel,
   MessageOwnerModel,
+  NewJoinerProfileModel,
   OnboardingDeviationModel,
   PolicyQuestionModel,
 } from './models.js';
@@ -69,6 +70,7 @@ const ALL_MODELS: readonly Model<never>[] = [
   ConversationModel,
   PolicyQuestionModel,
   OnboardingDeviationModel,
+  NewJoinerProfileModel, // spec onboarding-api, rule 20
 ] as unknown as readonly Model<never>[];
 
 // The unique indexes rules 3–7 rely on. Startup refuses to serve without them (D-4).
@@ -83,6 +85,7 @@ const REQUIRED_UNIQUE: readonly { model: Model<never>; key: string }[] = [
   { model: PolicyQuestionModel as unknown as Model<never>, key: 'id' },
   { model: MODELS.OnboardingChecklist as unknown as Model<never>, key: 'id' },
   { model: OnboardingDeviationModel as unknown as Model<never>, key: 'id' },
+  { model: NewJoinerProfileModel as unknown as Model<never>, key: 'newJoinerId' }, // onboarding-api
 ];
 
 async function assertUniqueIndexes(): Promise<void> {

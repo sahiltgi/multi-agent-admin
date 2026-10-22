@@ -18,6 +18,9 @@ import { RunInput } from '../schemas.js';
 export const ONBOARDING_TOOLS = ['get_template', 'create_checklist', 'propose_deviation'] as const;
 export type OnboardingToolName = (typeof ONBOARDING_TOOLS)[number];
 
+/** onboarding-api rule 4: notes mode reads the template and proposes; code builds the checklist. */
+export const ONBOARDING_NOTES_TOOLS = ['get_template', 'propose_deviation'] as const;
+
 const PolicyHash = z.string().regex(/^[a-f0-9]{64}$/);
 
 // ---- get_template (rule 12) ----
@@ -137,6 +140,55 @@ export const OnboardingAgentResult = z.discriminatedUnion('kind', [
 ]); // no verdict outside `gate`
 export type OnboardingAgentResult = z.infer<typeof OnboardingAgentResult>;
 
+// ---- Notes mode (spec onboarding-api, rule 4; OQ-4) ----
+/** Strict: no name, team or employee id ever reaches the notes agent (onboarding-api rule 9). */
+export const OnboardingNotesInput = z
+  .object({
+    requestId: Id,
+    actor: z.object({ employeeId: Id, role: Role }).strict(),
+    templateId: TemplateId,
+    notes: z.string().trim().min(1).max(2000),
+  })
+  .strict();
+export type OnboardingNotesInput = z.infer<typeof OnboardingNotesInput>;
+
+export const OnboardingNotesResult = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('proposals'),
+      requestId: Id,
+      deviations: z.array(ProposedDeviation).max(MAX_DEVIATIONS_PER_RUN), // may be empty
+      injectionSuspected: z.boolean(),
+    })
+    .strict(),
+  z
+    .object({ kind: z.literal('needs_details'), requestId: Id, injectionSuspected: z.boolean() })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('escalated'),
+      requestId: Id,
+      reason: OnboardingEscalation,
+      injectionSuspected: z.boolean(),
+    })
+    .strict(),
+]); // no verdict, no checklist, no gate result: code owns all three
+export type OnboardingNotesResult = z.infer<typeof OnboardingNotesResult>;
+
+/** eventType 'agent_step', actor { kind: 'agent', id: 'onboarding_notes' }: the last event. No free text. */
+export const OnboardingNotesOutcomePayload = z
+  .object({
+    kind: z.literal('onboarding_notes_outcome'),
+    requestId: Id,
+    outcome: z.enum(['proposals', 'needs_details', 'escalated']),
+    escalation: OnboardingEscalation.nullable(),
+    deviationCount: z.number().int().nonnegative(),
+    injectionSuspected: z.boolean(),
+    model: z.string().min(1),
+    promptVersion: z.string().min(1),
+  })
+  .strict();
+
 // ---- Audit payloads (rule 18) ----
 /** eventType 'gate_result', actor { kind: 'gate', id: 'onboarding' }: the gate output, unredacted. */
 export const OnboardingGateResultPayload = OnboardingGateResult.extend({
@@ -163,7 +215,7 @@ export const OnboardingInjectionPayload = z
   .object({
     kind: z.literal('injection_flagged'),
     requestId: Id,
-    agent: z.literal('onboarding'),
+    agent: z.enum(['onboarding', 'onboarding_notes']),
     source: z.enum(['user', 'document', 'tool']),
     tool: z.string().nullable(),
     excerpt: z.string(), // already redacted and bounded by the runtime

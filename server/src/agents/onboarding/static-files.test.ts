@@ -26,6 +26,38 @@ describe('onboarding static files', () => {
       expect(email).toMatch(/\.(example|test)$/);
   });
 
+  it('onboarding-api evals: cases.jsonl parses as OnboardingEvalCase with ids exactly EV-1 to EV-25', () => {
+    const file = root('evals/onboarding-api/cases.jsonl');
+    expect(existsSync(file)).toBe(true);
+    const lines = readFileSync(file, 'utf8')
+      .split('\n')
+      .filter((l) => l.trim() !== '');
+    const cases = lines.map((line) => OnboardingEvalCase.parse(JSON.parse(line)));
+    const expected = Array.from({ length: 25 }, (_, i) => `EV-${String(i + 1)}`);
+    expect(cases.map((c) => c.id)).toEqual(expected);
+    expect(cases.every((c) => c.endpoint === 'onboarding')).toBe(true);
+    // agents.md: notes-mode behaviour needs extraction and injection cases, not only unit tests.
+    for (const category of ['extraction', 'verdict', 'injection'] as const) {
+      expect(
+        cases.some((c) => c.category === category),
+        category,
+      ).toBe(true);
+    }
+    const text = readFileSync(file, 'utf8');
+    for (const id of text.match(/emp-\d+/g) ?? []) expect(id).toMatch(/^emp-\d{3}$/);
+    for (const email of text.match(/[\w.+-]+@[\w.-]+/g) ?? [])
+      expect(email).toMatch(/\.(example|test)$/);
+  });
+
+  it('onboarding-api prompts: notes_context.md gives the model exactly the no_changes sentence the agent checks', () => {
+    const sentence = read('prompts/onboarding/messages/no_changes.txt').trim();
+    expect(sentence).not.toBe('');
+    const lines = read('prompts/onboarding/notes_context.md')
+      .split('\n')
+      .map((l) => l.trim());
+    expect(lines).toContain(sentence);
+  });
+
   it('onboarding prompts: the prompt and tool descriptions are committed and non-blank', () => {
     for (const rel of [
       'prompts/onboarding/v1.md',

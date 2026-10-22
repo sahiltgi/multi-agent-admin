@@ -248,6 +248,15 @@ export const MAX_OFFSET_DAYS = 90;
 /** Whole calendar days from the start date (OQ-8). */
 export const DueOffsetDays = z.number().int().min(MIN_OFFSET_DAYS).max(MAX_OFFSET_DAYS);
 
+/** A free-text block reason: data, shown to checklist readers, redacted in the audit (onboarding-api rule 12). */
+export const BlockReason = z.string().trim().min(1).max(200);
+
+/** Why and by whom a task is blocked (spec onboarding-api, rule 15; OQ-3). */
+export const TaskBlock = z
+  .object({ reason: BlockReason, blockedBy: Id, blockedAt: IsoDateTime })
+  .strict();
+export type TaskBlock = z.infer<typeof TaskBlock>;
+
 export const ChecklistTask = z
   .object({
     id: Id, // the template task id, or 'added-<n>' for an approved addition
@@ -261,11 +270,16 @@ export const ChecklistTask = z
     done: z.boolean(),
     completedBy: Id.optional(), // set by the completion route only
     completedAt: IsoDateTime.optional(),
+    blocked: TaskBlock.optional(), // set and cleared by the status route only (onboarding-api OQ-3)
   })
   .strict()
   .refine((t) => t.done === (t.completedBy !== undefined && t.completedAt !== undefined), {
     path: ['done'],
     error: 'done must be set exactly when completedBy and completedAt are',
+  })
+  .refine((t) => !(t.done && t.blocked !== undefined), {
+    path: ['blocked'],
+    error: 'a done task is never blocked',
   });
 export type ChecklistTask = z.infer<typeof ChecklistTask>;
 
