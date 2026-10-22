@@ -19,7 +19,7 @@
     "build": "npm run build --workspaces",
     "seed": "node --env-file-if-exists=.env --import tsx server/src/seeds/cli.ts",
     "start": "node --env-file-if-exists=.env --import tsx server/src/index.ts",
-    "evals": "node -e \"console.log('evals: placeholder, no cases yet')\"",
+    "evals": "node --env-file-if-exists=.env --import tsx server/src/evals/cli.ts",
     "prepare": "husky"
   },
   "lint-staged": {

@@ -184,17 +184,29 @@ export const LeaveEvalCase = z
     id: z.string().regex(/^EV-\d+$/),
     category: z.enum(['routing', 'extraction', 'verdict', 'citation', 'injection']),
     actor: z.object({ employeeId: Id, role: Role }).strict(),
+    asOf: IsoDate.optional(), // the gate's `today` for an end-to-end verdict (eval growth)
     userText: z.string().trim().min(1),
     expected: z
       .object({
         resultKind: z.enum(['card', 'needs_details', 'escalated', 'hand_back']).optional(),
         maxSubmissions: z.number().int().nonnegative().optional(),
+        // what the agent must submit to the gate (eval growth)
+        extracted: z
+          .object({
+            leaveType: LeaveType,
+            startDate: IsoDate,
+            endDate: IsoDate,
+            reason: z.string().min(1).optional(),
+          })
+          .strict()
+          .optional(),
         verdict: LeaveVerdict.optional(),
         injectionFlagged: z.boolean().optional(),
       })
       .strict(),
     tags: z.array(z.string().regex(/^[a-z][a-z0-9_]*$/)),
     notes: z.string().optional(),
+    reviewed: z.boolean().optional(), // set by a human labeller only (eval growth)
   })
   .strict();
 export type LeaveEvalCase = z.infer<typeof LeaveEvalCase>;

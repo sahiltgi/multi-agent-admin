@@ -32,21 +32,21 @@ If gitleaks flags something, remove the secret from the change and rotate it. Do
 
 Run from the repo root. These are the only scripts defined in the `package.json` files.
 
-| Command                                      | What it does                                                                                                                   |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `npm run typecheck`                          | `tsc -b` across tools, server and web                                                                                          |
-| `npm run lint`                               | ESLint, zero warnings allowed                                                                                                  |
-| `npm run format:check`                       | Prettier check                                                                                                                 |
-| `npm test`                                   | Vitest, server (node) and web (jsdom) projects                                                                                 |
-| `npm run test:one -- <path/to/file.test.ts>` | One test file; exits 2 if the path is missing                                                                                  |
-| `npm run test:integration`                   | Integration tests against `MONGODB_URI` in `.env` (compose or Atlas); each file uses its own `hr_test_*` database and drops it |
-| `npm run seed`                               | Replaces the demo data in MongoDB (refuses production)                                                                         |
-| `npm start`                                  | API server on `127.0.0.1:${PORT:-3000}`; needs `MONGODB_URI` and `ANTHROPIC_API_KEY` in `.env`. Run `npm run seed` first       |
-| `npm run build`                              | Builds every workspace (`server/dist`, `web/dist`)                                                                             |
-| `npm run evals`                              | Placeholder: prints a message, no eval cases yet                                                                               |
-| `npm run dev -w web`                         | Vite dev server for the UI                                                                                                     |
-| `npm run preview -w web`                     | Serves `web/dist` (run `npm run build` first)                                                                                  |
-| `npm run prepare`                            | Installs the husky git hooks; `npm install` runs it                                                                            |
+| Command                                      | What it does                                                                                                                                                                               |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `npm run typecheck`                          | `tsc -b` across tools, server and web                                                                                                                                                      |
+| `npm run lint`                               | ESLint, zero warnings allowed                                                                                                                                                              |
+| `npm run format:check`                       | Prettier check                                                                                                                                                                             |
+| `npm test`                                   | Vitest, server (node) and web (jsdom) projects                                                                                                                                             |
+| `npm run test:one -- <path/to/file.test.ts>` | One test file; exits 2 if the path is missing                                                                                                                                              |
+| `npm run test:integration`                   | Integration tests against `MONGODB_URI` in `.env` (compose or Atlas); each file uses its own `hr_test_*` database and drops it                                                             |
+| `npm run seed`                               | Replaces the demo data in MongoDB (refuses production)                                                                                                                                     |
+| `npm start`                                  | API server on `127.0.0.1:${PORT:-3000}`; needs `MONGODB_URI` and `ANTHROPIC_API_KEY` in `.env`. Run `npm run seed` first                                                                   |
+| `npm run build`                              | Builds every workspace (`server/dist`, `web/dist`)                                                                                                                                         |
+| `npm run evals`                              | Runs the four agent eval files against the real model (needs `ANTHROPIC_API_KEY`, spends API credit) and writes `evals/results/<date>.json`; exit 1 when `evals/thresholds.yaml` is missed |
+| `npm run dev -w web`                         | Vite dev server for the UI                                                                                                                                                                 |
+| `npm run preview -w web`                     | Serves `web/dist` (run `npm run build` first)                                                                                                                                              |
+| `npm run prepare`                            | Installs the husky git hooks; `npm install` runs it                                                                                                                                        |
 
 ## Claude Code setup
 
