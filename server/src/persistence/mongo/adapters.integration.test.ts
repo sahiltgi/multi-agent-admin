@@ -38,6 +38,7 @@ import type {
   LeaveRequestStore,
 } from '../../intake/ports.js';
 import { MODELS, AuditEventModel } from '../../models/index.js';
+import { onboardingApiStoreContract } from '../../onboarding/store-contract.test.js';
 import { fixtures } from '../../seeds/fixtures.js';
 import {
   connectMongo,
@@ -619,6 +620,15 @@ onboardingContract('in-memory', async () => {
   return new InMemoryOnboardingStore();
 });
 onboardingContract('mongo', async () => {
+  const { MongoOnboardingStore } = await import('./onboarding.js');
+  return new MongoOnboardingStore();
+});
+
+// onboarding-api AT-23 (rule 20): the shared list and profile contract, run against Mongo. The factory
+// empties the checklist collection first so other contracts' leftovers cannot affect ordering or limits.
+// (Importing the contract file also registers its in-memory run in this file; that is harmless.)
+onboardingApiStoreContract('mongo', async () => {
+  await MODELS.OnboardingChecklist.deleteMany({});
   const { MongoOnboardingStore } = await import('./onboarding.js');
   return new MongoOnboardingStore();
 });

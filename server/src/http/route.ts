@@ -13,7 +13,7 @@ export interface RouteRequest<P, Q, B> {
 }
 
 export interface RouteSpec<P, Q, B, R> {
-  method: 'get' | 'post';
+  method: 'get' | 'post' | 'patch'; // 'patch': spec onboarding-api, rule 1
   path: string;
   params: z.ZodType<P>;
   query: z.ZodType<Q>;
@@ -24,7 +24,7 @@ export interface RouteSpec<P, Q, B, R> {
 
 /** What the app mounts: raw request parts in, a response value that passed its schema out. */
 export interface RouteDefinition {
-  method: 'get' | 'post';
+  method: 'get' | 'post' | 'patch'; // 'patch': spec onboarding-api, rule 1
   path: string;
   handle(raw: RouteRequest<unknown, unknown, unknown>): Promise<unknown>;
 }

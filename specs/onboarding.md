@@ -563,10 +563,12 @@ Numbered. Gate rule ids are `checklist_matches_template`, `no_tasks_added` and `
     - Any other actor gets 404 if they can't read the checklist (rule 25), and 403 `forbidden` otherwise.
     - **Proposal, the human confirms (OQ-5):** a task whose `dependsOn` includes an undone task gives 409 `dependencies_incomplete`.
     - An already-done task gives 409 `already_done`.
-    - On success, code sets `done: true`, `completedBy = actor.employeeId` and `completedAt = clock.nowIso()`, saves with `saveChecklistIfVersion`, and writes one `human_action` event (`onboarding_task_completed`). An audit-write failure restores the checklist and gives 500.
+    - On success, code sets `done: true`, `completedBy = actor.employeeId` and `completedAt = clock.nowIso()`, saves with `saveChecklistIfVersion`, and writes one `human_action` event (`onboarding_task_completed`; since onboarding-api, `onboarding_task_status_changed`). An audit-write failure restores the checklist and gives 500.
     - The body accepts no keys, so `completedBy`, `completedAt` and `done` can't be supplied.
 
     (gate rule: none)
+
+    > **Amended by `specs/onboarding-api.md` (2026-10-21):** the route is now `PATCH /onboarding/:checklistId/tasks/:taskId` with `{ status: 'done' | 'blocked' | 'open' }` (onboarding-api rules 1, 12–14). `hr_admin` may change only `it`, `admin` and unassigned `buddy` tasks, on their behalf; not `manager` tasks or a named buddy's (onboarding-api OQ-2). The audit event is `onboarding_task_status_changed`.
 
 25. **Reads are RBAC-checked, minimise PII, and report per-owner progress.** `GET /onboarding/checklists/:checklistId` returns `ChecklistView` to:
     - `hr_admin`;
@@ -579,6 +581,8 @@ Numbered. Gate rule ids are `checklist_matches_template`, `no_tasks_added` and `
     - The view carries ids only: no `displayName`, no email and no new joiner name (OQ-9).
 
     (gate rule: none)
+
+    > **Amended by `specs/onboarding-api.md` (2026-10-21):** the route is now `GET /onboarding/:checklistId`, plus a list route `GET /onboarding` (onboarding-api rules 10, 11). `progress` gains a `blocked` count, and the view gains `newJoiner`, non-null only for `hr_admin` and the checklist manager (onboarding-api OQ-3, OQ-5).
 
 **Schemas, wiring and data**
 
@@ -799,8 +803,8 @@ All tests use:
   - Given a checklist holding an applied `added-1` with `dependsOn: ['desk']`, when `applyDeviation` is called directly with a `remove` of `desk`, then it throws `DeviationConflictError` and its deep-frozen input is unchanged.
   - Given an `OnboardingStore` and approval store seeded directly with that checklist, a pending `remove` deviation of `desk` and its open item, when `emp-002` approves, then the response is 409 and the checklist, deviation and item are unchanged, with no `human_action` written.
 
-- **AT-31 (rule 24, _pending OQ-2, OQ-5_):** Given the AT-3 checklist:
-  - `emp-002` completes `welcome`, which gives `done: true`, `completedBy: 'emp-002'` and `completedAt: '2026-10-21T09:00:00Z'`, plus one `onboarding_task_completed` event;
+- **AT-31 (rule 24, _pending OQ-2, OQ-5_; AT-31 to AT-33 moved to the onboarding-api paths and permissions, 2026-10-21):** Given the AT-3 checklist:
+  - `emp-002` completes `welcome`, which gives `done: true`, `completedBy: 'emp-002'` and `completedAt: '2026-10-21T09:00:00Z'`, plus one `onboarding_task_completed` event (since onboarding-api: one `onboarding_task_status_changed` event with `from: 'open'`, `to: 'done'`);
   - `emp-005` completes `buddy-intro` after `welcome`, which succeeds;
   - `emp-005` completes `laptop`, which gives 403;
   - `emp-004` completes `laptop`, which gives 404;
@@ -866,14 +870,14 @@ Each rule has at least one. Category: `routing | extraction | verdict | citation
 All 14 were accepted as recommended by the owner ("approved, accept all defaults") on 2026-10-21. No open questions remain. The ids are kept so every `(OQ-n)` reference above still resolves.
 
 - **OQ-1 (decided): policy file path.** `policies/onboarding/v1.yaml`, with `version: v1` matching the file stem (the `policies/leave/v1.yaml` and `policies/qa/v1.yaml` convention). The code step drafts the three templates' real tasks, and the owner approves them in the PR.
-- **OQ-2 (decided): who completes and reads tasks.** Option (a): `hr_admin` may complete any task; the checklist manager completes `manager` tasks; the named owner (`ownerEmployeeId`, for example the buddy) completes their own. `it` and `admin` tasks are completed by `hr_admin`. Readers are `hr_admin`, the checklist manager and named owners. A buddy marking a task done is not "editing another employee's records" (HARD RULE 2): the checklist isn't an employee record, and no agent tool does it.
-- **OQ-3 (decided): who starts onboarding.** `hr_admin` only. Managers and employees get the fixed `denied` text, and the agent doesn't run.
+- **OQ-2 (decided): who completes and reads tasks.** Option (a): `hr_admin` may complete any task; the checklist manager completes `manager` tasks; the named owner (`ownerEmployeeId`, for example the buddy) completes their own. `it` and `admin` tasks are completed by `hr_admin`. Readers are `hr_admin`, the checklist manager and named owners. A buddy marking a task done is not "editing another employee's records" (HARD RULE 2): the checklist isn't an employee record, and no agent tool does it. _Amended by `specs/onboarding-api.md` (2026-10-21): `hr_admin` no longer completes `manager` tasks or a named buddy's tasks; it acts on `it`, `admin` and unassigned `buddy` tasks on their behalf (onboarding-api OQ-2)._
+- **OQ-3 (decided): who starts onboarding.** `hr_admin` only. Managers and employees get the fixed `denied` text, and the agent doesn't run. _Amended by `specs/onboarding-api.md` (2026-10-21): this still holds for chat; on `POST /onboarding` a manager may also create for their own team (onboarding-api OQ-6)._
 - **OQ-4 (decided): deviation timing.** The template checklist is created at once. Each deviation is applied only when the manager approves it. On rejection the template checklist stands unchanged.
 - **OQ-5 (decided): dependencies.** At load, cycles, unknown ids and self-dependencies fail startup. There is no due-date ordering check in v1. Completing a task before its dependencies gives 409 `dependencies_incomplete`.
 - **OQ-6 (decided): domain schema changes.** `ChecklistTask` and `OnboardingChecklist` are amended as sketched, with refines (done iff the completion fields are set; dependencies known and acyclic). `OnboardingDeviation` is storage-only, outside `ENTITY_SCHEMAS` and `MODELS` (the `PolicyQuestion` pattern). `ENTITY_SCHEMAS` and `MODELS` keep 8 keys. Deviations aren't embedded in the checklist.
 - **OQ-7 (decided): low-confidence extraction.** A missing start date, a role that isn't one of the three templates, or a missing team gives a clarifying question (`needs_details`), never an escalation. The manager is always `Team.managerId` of `newHireTeam`, never taken from text. The buddy must be a seeded member of that team and not its manager. A start date before today (injected clock, UTC) gives `start_date_past`.
 - **OQ-8 (decided): due-date arithmetic.** Calendar days in UTC, no shifting for weekends or holidays, offsets from -30 to 90 inclusive, and a weekend or holiday start date is accepted as stated.
-- **OQ-9 (decided): new joiner identity.** A minted opaque id (`idGen`). No name is stored or sent anywhere; the requester identifies the joiner out of band.
+- **OQ-9 (decided): new joiner identity.** A minted opaque id (`idGen`). No name is stored or sent anywhere; the requester identifies the joiner out of band. _Amended by `specs/onboarding-api.md` (2026-10-21): `POST /onboarding` stores the name in a storage-only `NewJoinerProfile`, shown only to `hr_admin` and the checklist manager (onboarding-api OQ-5)._
 - **OQ-10 (decided): approval-queue fit.** All six amendments are accepted:
   - the `SubjectResolver` returns `{ ownerEmployeeId: proposedBy, deviation, checklist }` for `onboarding_deviation`;
   - the manager grant for this kind is `item.assigneeId === actor.employeeId`;

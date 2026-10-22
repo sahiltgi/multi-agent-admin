@@ -5,6 +5,7 @@ import {
   ConversationModel,
   IdempotencyRecordModel,
   MessageOwnerModel,
+  NewJoinerProfileModel,
   OnboardingDeviationModel,
   PolicyQuestionModel,
 } from '../persistence/mongo/models.js';
@@ -33,6 +34,7 @@ const CLEARED_MODEL = {
   policyQuestions: PolicyQuestionModel,
   onboardingChecklists: MODELS.OnboardingChecklist, // spec onboarding (OQ-14)
   onboardingDeviations: OnboardingDeviationModel,
+  newJoinerProfiles: NewJoinerProfileModel, // spec onboarding-api, rule 20
 } as const satisfies Record<SeedClearedCollection, unknown>;
 
 /** The model methods the seed needs. Docs were Zod-parsed by runSeed before they get here. */

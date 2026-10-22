@@ -1,18 +1,41 @@
-// OnboardingStore on MongoDB (spec onboarding, rules 21–25; mongo-persistence amendment, OQ-14).
+// OnboardingStore on MongoDB (spec onboarding, rules 21–25; mongo-persistence amendment, OQ-14;
+// onboarding-api rules 7, 11, 20).
 // Matches ids with $eq only, so a crafted id can never become a query operator. Conditional
 // writes replace a document only while its version or status is still the expected one.
 import {
+  NewJoinerProfile,
   OnboardingChecklist,
   OnboardingDeviation,
+  type ChecklistListFilter,
   type DeviationStatus,
   type OnboardingStore,
 } from '../../domain/onboarding.js';
 import { MODELS } from '../../models/index.js';
-import { OnboardingDeviationModel } from './models.js';
+import { NewJoinerProfileModel, OnboardingDeviationModel } from './models.js';
 import { isDuplicateKey, literal, NO_STORAGE_KEYS, parseAllStored, parseStored } from './read.js';
 
 const CHECKLISTS = 'onboardingChecklists';
 const DEVIATIONS = 'onboardingDeviations';
+const PROFILES = 'newJoinerProfiles';
+
+/** The Mongo query for a ChecklistListFilter (onboarding-api rule 11); every value is a literal. */
+function listQuery(f: ChecklistListFilter): Record<string, unknown> {
+  const and: Record<string, unknown>[] = [];
+  if (f.visibleTo.kind === 'employee') {
+    const me = literal(f.visibleTo.employeeId);
+    and.push({ $or: [{ managerEmployeeId: me }, { 'tasks.ownerEmployeeId': me }] });
+  }
+  if (f.templateId !== undefined) and.push({ templateId: literal(f.templateId) });
+  if (f.startDateFrom !== undefined) and.push({ startDate: { $gte: f.startDateFrom } });
+  if (f.startDateTo !== undefined) and.push({ startDate: { $lte: f.startDateTo } });
+  if (f.after !== undefined) {
+    const { startDate, id } = f.after;
+    and.push({
+      $or: [{ startDate: { $gt: startDate } }, { startDate: literal(startDate), id: { $gt: id } }],
+    });
+  }
+  return and.length === 0 ? {} : { $and: and };
+}
 
 export class MongoOnboardingStore implements OnboardingStore {
   /** Adds a new checklist; false if the id exists (unique index), never overwrites. */
@@ -93,5 +116,41 @@ export class MongoOnboardingStore implements OnboardingStore {
       .lean()
       .exec();
     return parseAllStored(OnboardingDeviation, DEVIATIONS, docs);
+  }
+
+  /** startDate asc, then id asc, at most `limit` (onboarding-api rule 11). */
+  async listChecklists(filter: ChecklistListFilter): Promise<OnboardingChecklist[]> {
+    const docs = await MODELS.OnboardingChecklist.find(listQuery(filter), NO_STORAGE_KEYS)
+      .sort({ startDate: 1, id: 1 })
+      .limit(filter.limit)
+      .lean()
+      .exec();
+    return parseAllStored(OnboardingChecklist, CHECKLISTS, docs);
+  }
+
+  /** Adds a new profile; false if the newJoinerId exists (unique index), never overwrites. */
+  async insertProfile(p: NewJoinerProfile): Promise<boolean> {
+    try {
+      await NewJoinerProfileModel.create(NewJoinerProfile.parse(p));
+      return true;
+    } catch (err) {
+      if (isDuplicateKey(err)) return false;
+      throw err;
+    }
+  }
+
+  async getProfile(newJoinerId: string): Promise<NewJoinerProfile | null> {
+    const doc = await NewJoinerProfileModel.findOne(
+      { newJoinerId: literal(newJoinerId) },
+      NO_STORAGE_KEYS,
+    )
+      .lean()
+      .exec();
+    return doc === null ? null : parseStored(NewJoinerProfile, PROFILES, doc);
+  }
+
+  /** Compensation only (onboarding-api rule 7). */
+  async removeProfile(newJoinerId: string): Promise<void> {
+    await NewJoinerProfileModel.deleteOne({ newJoinerId: literal(newJoinerId) }).exec();
   }
 }

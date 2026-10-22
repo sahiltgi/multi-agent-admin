@@ -355,14 +355,34 @@ function makeWorld(script: Rec[], o: WorldOpts = {}) {
     idGen,
     onboarding: store,
   } as unknown as ApprovalApiDeps;
+  // onboarding-api (rule 19): one deps shape for all four onboarding routes. This file only needs
+  // the PATCH route (completion in AT-2), so the create-only dependencies are loud stubs.
+  const unused = (name: string) => () => Promise.reject(new Error(`${name} must not be used`));
   const routes = [
     ...createIntakeRoutes(intakeDeps),
     ...createOnboardingRoutes({
-      directory,
+      directory: {
+        getById: (id: string) => directory.getById(id),
+        getTeamById: (id: string) =>
+          Promise.resolve(fixtures.teams.find((t) => t.id === id) ?? null),
+      },
       onboarding: store,
+      approvals: { insert: unused('approvals.insert'), remove: unused('approvals.remove') },
+      messages: { recordMessage: unused('messages.recordMessage') },
       audit: sink,
       clock,
       idGen,
+      idempotency: {
+        begin: unused('begin'),
+        complete: unused('complete'),
+        release: unused('release'),
+      },
+      policy: POLICY,
+      evaluateOnboarding: gate,
+      toIsoDate: (iso: string) => iso.slice(0, 10),
+      runOnboardingNotes: unused('runOnboardingNotes'),
+      onboardingTexts: intakeDeps.onboardingTexts,
+      intakeTexts: intakeDeps.texts,
     }),
   ];
   return {
@@ -404,7 +424,12 @@ async function boot(w: World) {
   const addr = server.address();
   if (addr === null || typeof addr === 'string') throw new Error('no port');
   const base = `http://127.0.0.1:${String(addr.port)}`;
-  const call = async (user: string, method: 'GET' | 'POST', path: string, body?: unknown) => {
+  const call = async (
+    user: string,
+    method: 'GET' | 'POST' | 'PATCH',
+    path: string,
+    body?: unknown,
+  ) => {
     const headers: Record<string, string> = { 'x-demo-user': user };
     if (body !== undefined) headers['content-type'] = 'application/json';
     const r = await fetch(base + path, {
@@ -435,8 +460,10 @@ async function boot(w: World) {
       ...(action === 'comment' ? { comment: 'Synthetic note.' } : {}),
       seen: { verdict, policyHash: HASH },
     });
+  // onboarding-api OQ-1: POST .../complete with {} became PATCH /onboarding/:id/tasks/:taskId with
+  // { status: 'done' }. emp-001 (hr_admin) still completes the it task `laptop` (OQ-2: on behalf of it).
   const complete = (user: string, checklistId: string, taskId: string) =>
-    call(user, 'POST', `/onboarding/checklists/${checklistId}/tasks/${taskId}/complete`, {});
+    call(user, 'PATCH', `/onboarding/${checklistId}/tasks/${taskId}`, { status: 'done' });
   return { call, send, act, complete };
 }
 

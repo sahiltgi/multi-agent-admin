@@ -152,7 +152,7 @@ function routeTable(app: ReturnType<typeof buildApp>): string[] {
 }
 
 describe('buildApp with chat', () => {
-  it('AT-31: the route table is exactly the four approval-queue routes, /messages, /my-requests, /chat, /conversations/:id and the two onboarding routes (onboarding amendment)', async () => {
+  it('AT-31: the route table is exactly the four approval-queue routes, /messages, /my-requests, /chat, /conversations/:id and the four onboarding routes (onboarding-api OQ-1)', async () => {
     const { app } = await world();
     expect(routeTable(app)).toEqual(
       [
@@ -164,8 +164,11 @@ describe('buildApp with chat', () => {
         'GET /my-requests',
         'POST /chat',
         'GET /conversations/:id',
-        'GET /onboarding/checklists/:checklistId', // onboarding OQ-14
-        'POST /onboarding/checklists/:checklistId/tasks/:taskId/complete',
+        // onboarding-api OQ-1: the two old onboarding routes are replaced by these four.
+        'POST /onboarding',
+        'GET /onboarding',
+        'GET /onboarding/:checklistId',
+        'PATCH /onboarding/:checklistId/tasks/:taskId',
       ].sort(),
     );
   });

@@ -147,7 +147,7 @@ describe('runSeed', () => {
     expect(h.calls).toContain('disconnect');
   });
 
-  it('AT-20: (mongo-persistence D-15, amended by chat-endpoint, policy-qa and onboarding) clears exactly the seven collections after connect and before any replaceAll', async () => {
+  it('AT-20: (mongo-persistence D-15, amended by chat-endpoint, policy-qa and onboarding) clears exactly the eight collections (onboarding-api rule 20) after connect and before any replaceAll', async () => {
     const h = harness();
     const code = await runSeed(h.deps({ MONGODB_URI: GOOD_URI }));
     expect(code).toBe(0);
@@ -157,6 +157,7 @@ describe('runSeed', () => {
       'clear:conversations',
       'clear:idempotencyRecords',
       'clear:messageOwners',
+      'clear:newJoinerProfiles', // onboarding-api rule 20: profiles point at cleared checklists
       'clear:onboardingChecklists', // onboarding amendment
       'clear:onboardingDeviations',
       'clear:policyQuestions',
@@ -194,7 +195,7 @@ describe('chat-endpoint seeding', () => {
     expect([...SEED_CLEARED]).toContain('policyQuestions');
   });
 
-  it('AT-33: clear is called for exactly the seven collections (onboarding amendment), each before any replaceAll, never for audit', async () => {
+  it('AT-33: clear is called for exactly the eight collections (onboarding and onboarding-api amendments), each before any replaceAll, never for audit', async () => {
     const h = harness();
     expect(await runSeed(h.deps({ MONGODB_URI: GOOD_URI }))).toBe(0);
     const clears = h.calls.filter((c) => c.startsWith('clear:'));
@@ -203,6 +204,7 @@ describe('chat-endpoint seeding', () => {
       'clear:conversations',
       'clear:idempotencyRecords',
       'clear:messageOwners',
+      'clear:newJoinerProfiles', // onboarding-api rule 20: profiles point at cleared checklists
       'clear:onboardingChecklists', // onboarding amendment
       'clear:onboardingDeviations',
       'clear:policyQuestions',

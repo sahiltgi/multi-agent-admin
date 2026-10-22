@@ -12,13 +12,16 @@ import {
   OnboardingChecklist,
   OnboardingGateResult,
   TaskOwner,
+  TemplateId,
   TemplateTaskId,
   type Employee,
   type Team,
 } from './schemas.js';
 
 export {
+  BlockReason,
   ChecklistTask,
+  TaskBlock,
   DueOffsetDays,
   MAX_OFFSET_DAYS,
   MIN_OFFSET_DAYS,
@@ -75,6 +78,73 @@ export const OnboardingDeviation = z
   .strict();
 export type OnboardingDeviation = z.infer<typeof OnboardingDeviation>;
 
+// ---- Task status (spec onboarding-api, rules 14, 15; OQ-3) ----
+export const TaskStatus = z.enum(['open', 'blocked', 'done']);
+export type TaskStatus = z.infer<typeof TaskStatus>;
+
+/** Derived, never stored: done wins, then blocked, else open. */
+export function taskStatus(t: Pick<ChecklistTask, 'done' | 'blocked'>): TaskStatus {
+  if (t.done) return 'done';
+  return t.blocked === undefined ? 'open' : 'blocked';
+}
+
+// ---- New joiner name: storage-only, outside ENTITY_SCHEMAS and MODELS (onboarding-api OQ-5) ----
+/** Letters, spaces, apostrophes and hyphens: no digits, '@' or '<', so no email or markup. */
+export const NewJoinerName = z
+  .string()
+  .trim()
+  .min(1)
+  .max(100)
+  .regex(/^\p{L}[\p{L} '-]*$/u);
+export type NewJoinerName = z.infer<typeof NewJoinerName>;
+
+export const NewJoinerProfile = z
+  .object({ newJoinerId: Id, checklistId: Id, displayName: NewJoinerName, createdAt: IsoDateTime })
+  .strict();
+export type NewJoinerProfile = z.infer<typeof NewJoinerProfile>;
+
+/** What GET /onboarding asks the store for (onboarding-api rule 11; OQ-8). */
+export interface ChecklistListFilter {
+  /** 'all' for hr_admin only; 'employee' is the checklist manager or any task owner. */
+  visibleTo: { kind: 'all' } | { kind: 'employee'; employeeId: string };
+  templateId?: TemplateId;
+  startDateFrom?: IsoDate; // inclusive
+  startDateTo?: IsoDate; // inclusive
+  /** The decoded cursor: rows strictly after this (startDate, id). */
+  after?: { startDate: IsoDate; id: string };
+  limit: number;
+}
+
+/** The read predicate shared by the store's 'employee' visibility and the routes (onboarding rule 25). */
+export function visibleToEmployee(c: OnboardingChecklist, employeeId: string): boolean {
+  return (
+    c.managerEmployeeId === employeeId || c.tasks.some((t) => t.ownerEmployeeId === employeeId)
+  );
+}
+
+/** In-memory form of a ChecklistListFilter: startDate asc, then id asc. */
+export function filterChecklists(
+  all: readonly OnboardingChecklist[],
+  f: ChecklistListFilter,
+): OnboardingChecklist[] {
+  const { visibleTo, after } = f;
+  return all
+    .filter((c) => visibleTo.kind === 'all' || visibleToEmployee(c, visibleTo.employeeId))
+    .filter((c) => f.templateId === undefined || c.templateId === f.templateId)
+    .filter((c) => f.startDateFrom === undefined || c.startDate >= f.startDateFrom)
+    .filter((c) => f.startDateTo === undefined || c.startDate <= f.startDateTo)
+    .filter(
+      (c) =>
+        after === undefined ||
+        c.startDate > after.startDate ||
+        (c.startDate === after.startDate && c.id > after.id),
+    )
+    .sort((a, b) =>
+      a.startDate === b.startDate ? (a.id < b.id ? -1 : 1) : a.startDate < b.startDate ? -1 : 1,
+    )
+    .slice(0, f.limit);
+}
+
 // ---- Ports ----
 export interface OnboardingStore {
   /** false if the id exists. */
@@ -93,6 +163,13 @@ export interface OnboardingStore {
   removeDeviation(id: string): Promise<void>;
   /** A checklist's deviations, in insertion order. */
   listDeviationsByChecklist(checklistId: string): Promise<OnboardingDeviation[]>;
+  /** Visible checklists, startDate asc then id asc, at most `limit` (onboarding-api rule 11). */
+  listChecklists(filter: ChecklistListFilter): Promise<OnboardingChecklist[]>;
+  /** false if the newJoinerId exists (onboarding-api OQ-5). */
+  insertProfile(p: NewJoinerProfile): Promise<boolean>;
+  getProfile(newJoinerId: string): Promise<NewJoinerProfile | null>;
+  /** Compensation only (onboarding-api rule 7). */
+  removeProfile(newJoinerId: string): Promise<void>;
 }
 
 /** Directory reads the onboarding agent and routes need. */

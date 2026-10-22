@@ -1,8 +1,12 @@
-// In-memory OnboardingStore for tests and local runs (spec onboarding, rules 21–25). Every read and
-// write clones, so callers never share state with the store. Seed records are parsed on the way in.
+// In-memory OnboardingStore for tests and local runs (spec onboarding, rules 21–25; onboarding-api,
+// rules 7, 11). Every read and write clones, so callers never share state with the store. Seed
+// records are parsed on the way in.
 import {
+  filterChecklists,
+  NewJoinerProfile,
   OnboardingChecklist,
   OnboardingDeviation,
+  type ChecklistListFilter,
   type DeviationStatus,
   type OnboardingStore,
 } from '../domain/onboarding.js';
@@ -10,6 +14,7 @@ import {
 export class InMemoryOnboardingStore implements OnboardingStore {
   private readonly checklists = new Map<string, OnboardingChecklist>();
   private readonly deviations = new Map<string, OnboardingDeviation>();
+  private readonly profiles = new Map<string, NewJoinerProfile>();
 
   constructor(checklists: readonly unknown[] = [], deviations: readonly unknown[] = []) {
     for (const c of checklists) {
@@ -74,9 +79,30 @@ export class InMemoryOnboardingStore implements OnboardingStore {
     );
   }
 
-  /** Tests: every checklist, in insertion order. */
-  listChecklists(): Promise<OnboardingChecklist[]> {
-    return Promise.resolve([...this.checklists.values()].map((c) => structuredClone(c)));
+  /**
+   * With a filter: the visible page, startDate asc then id asc (onboarding-api rule 11).
+   * Without one (tests only): every checklist, in insertion order.
+   */
+  listChecklists(filter?: ChecklistListFilter): Promise<OnboardingChecklist[]> {
+    const all = [...this.checklists.values()];
+    const rows = filter === undefined ? all : filterChecklists(all, filter);
+    return Promise.resolve(rows.map((c) => structuredClone(c)));
+  }
+
+  insertProfile(p: NewJoinerProfile): Promise<boolean> {
+    if (this.profiles.has(p.newJoinerId)) return Promise.resolve(false);
+    this.profiles.set(p.newJoinerId, structuredClone(NewJoinerProfile.parse(p)));
+    return Promise.resolve(true);
+  }
+
+  getProfile(newJoinerId: string): Promise<NewJoinerProfile | null> {
+    const p = this.profiles.get(newJoinerId);
+    return Promise.resolve(p === undefined ? null : structuredClone(p));
+  }
+
+  removeProfile(newJoinerId: string): Promise<void> {
+    this.profiles.delete(newJoinerId);
+    return Promise.resolve();
   }
 
   /** Tests: every deviation, in insertion order. */

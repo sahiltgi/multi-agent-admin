@@ -22,7 +22,7 @@ import { createApp } from '../http/app.js';
 import { ErrorBody } from '../http/errors.js';
 import { fixtures } from '../seeds/fixtures.js';
 import { InMemoryOnboardingStore } from './in-memory.js';
-import { createOnboardingRoutes } from './routes.js';
+import { createOnboardingRoutes, type OnboardingRouteDeps } from './routes.js';
 import { ChecklistView } from './schemas.js';
 
 type Rec = Record<string, unknown>;
@@ -170,7 +170,8 @@ function makeWorld(o: WorldOpts = {}) {
     o.deviations ?? [deviation('dev-001', ADD)],
   );
   const approvals = new InMemoryApprovalStore(o.items ?? [item('ai-001', 'dev-001')]);
-  const directory = new InMemoryEmployeeDirectory([...fixtures.employees, EMP_021]);
+  // onboarding-api: the routes now also resolve teams (POST /onboarding), so the directory has them.
+  const directory = new InMemoryEmployeeDirectory([...fixtures.employees, EMP_021], fixtures.teams);
   const audit = {
     write: (e: AuditEvent): Promise<void> =>
       state.failWrites ? Promise.reject(new Error('sink-down')) : sink.write(e),
@@ -195,7 +196,31 @@ function makeWorld(o: WorldOpts = {}) {
     idGen,
     onboarding,
   } as unknown as ApprovalApiDeps;
-  const routes = createOnboardingRoutes({ directory, onboarding, audit, clock, idGen });
+  // onboarding-api (rule 19): one deps shape for all four routes. The read and PATCH tests below
+  // never reach the create-only dependencies, so those are stubs that fail loudly if they are used.
+  const unused = (name: string) => () => Promise.reject(new Error(`${name} must not be used`));
+  const routes = createOnboardingRoutes({
+    directory,
+    onboarding,
+    approvals: { insert: unused('approvals.insert'), remove: unused('approvals.remove') },
+    messages: { recordMessage: unused('messages.recordMessage') },
+    audit,
+    clock,
+    idGen,
+    idempotency: {
+      begin: unused('begin'),
+      complete: unused('complete'),
+      release: unused('release'),
+    },
+    policy: undefined,
+    evaluateOnboarding: () => {
+      throw new Error('evaluateOnboarding must not be used');
+    },
+    toIsoDate: (iso: string) => iso.slice(0, 10),
+    runOnboardingNotes: unused('runOnboardingNotes'),
+    onboardingTexts: { load: () => Promise.resolve(null) },
+    intakeTexts: { load: () => Promise.resolve(null) },
+  } as unknown as OnboardingRouteDeps);
   return { deps, routes, sink, state, onboarding, approvals };
 }
 type World = ReturnType<typeof makeWorld>;
@@ -226,7 +251,7 @@ async function boot(w: World) {
   const base = `http://127.0.0.1:${String(addr.port)}`;
   const call = async (
     user: string,
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'PATCH',
     path: string,
     body?: unknown,
   ): Promise<Res> => {
@@ -256,10 +281,16 @@ async function boot(w: World) {
       action,
       seen: { verdict, policyHash: HASH },
     });
-  const complete = (user: string, taskId: string, body: unknown = {}, checklistId = 'chk-001') =>
-    call(user, 'POST', `/onboarding/checklists/${checklistId}/tasks/${taskId}/complete`, body);
+  // onboarding-api OQ-1: POST .../complete with {} became PATCH /onboarding/:id/tasks/:taskId with
+  // { status: 'done' }; GET /onboarding/checklists/:id became GET /onboarding/:id.
+  const complete = (
+    user: string,
+    taskId: string,
+    body: unknown = { status: 'done' },
+    checklistId = 'chk-001',
+  ) => call(user, 'PATCH', `/onboarding/${checklistId}/tasks/${taskId}`, body);
   const read = (user: string, checklistId = 'chk-001') =>
-    call(user, 'GET', `/onboarding/checklists/${checklistId}`);
+    call(user, 'GET', `/onboarding/${checklistId}`);
   return { call, act, complete, read };
 }
 
@@ -465,15 +496,22 @@ describe('onboarding AT-31: task completion', () => {
     expect((await complete('emp-002', 'welcome')).status).toBe(200);
     const welcome = taskOf(await w.onboarding.getChecklist('chk-001'), 'welcome');
     expect(welcome).toMatchObject({ done: true, completedBy: 'emp-002', completedAt: NOW });
-    const events = humanEvents(w, 'onboarding_task_completed');
+    // onboarding-api OQ-9: onboarding_task_completed became onboarding_task_status_changed, with
+    // from / to / onBehalfOf / reason.
+    const events = humanEvents(w, 'onboarding_task_status_changed');
     expect(events).toHaveLength(1);
     expect(events[0]?.payload).toMatchObject({
-      kind: 'onboarding_task_completed',
+      kind: 'onboarding_task_status_changed',
       checklistId: 'chk-001',
       taskId: 'welcome',
       owner: 'manager',
+      from: 'open',
+      to: 'done',
       actorRole: 'manager',
+      onBehalfOf: null,
+      reason: null,
     });
+    expect(humanEvents(w, 'onboarding_task_completed')).toHaveLength(0);
     expect((await complete('emp-005', 'buddy-intro')).status).toBe(200);
   });
 
@@ -486,6 +524,33 @@ describe('onboarding AT-31: task completion', () => {
     expect(taskOf((await w.onboarding.getChecklist('chk-001')) as never, 'laptop')?.done).toBe(
       false,
     );
+  });
+
+  // NEW (onboarding-api OQ-2, not a migration): hr_admin no longer completes manager tasks or a
+  // named buddy's tasks; it still completes it and admin tasks, on behalf of the owner.
+  it('AT-31: hr_admin gets 403 on a manager task and on a named buddy task, and nothing changes', async () => {
+    const w = makeWorld(noDeviation);
+    const { complete } = await boot(w);
+    const before = await w.onboarding.getChecklist('chk-001');
+    expectError(await complete('emp-001', 'welcome'), 403, 'forbidden');
+    expectError(await complete('emp-001', 'buddy-intro'), 403, 'forbidden');
+    expect(await w.onboarding.getChecklist('chk-001')).toEqual(before);
+    expect(humanEvents(w)).toHaveLength(0);
+  });
+
+  it('AT-31: hr_admin completes an it task on behalf of it, recorded in the event', async () => {
+    const w = makeWorld(noDeviation);
+    const { complete } = await boot(w);
+    expect((await complete('emp-001', 'laptop')).status).toBe(200);
+    expect(taskOf(await w.onboarding.getChecklist('chk-001'), 'laptop')).toMatchObject({
+      done: true,
+      completedBy: 'emp-001',
+    });
+    expect(humanEvents(w, 'onboarding_task_status_changed')[0]?.payload).toMatchObject({
+      owner: 'it',
+      actorRole: 'hr_admin',
+      onBehalfOf: 'it',
+    });
   });
 
   it('AT-31: a task with an undone dependency is 409 dependencies_incomplete', async () => {
@@ -515,18 +580,25 @@ describe('onboarding AT-31: task completion', () => {
   });
 });
 
-describe('onboarding AT-32: the completion body accepts no keys', () => {
-  it.each([{ completedBy: 'emp-001' }, { done: true }, { completedAt: '2020-01-01T00:00:00Z' }])(
-    'AT-32: body %j is 400 invalid_request and nothing changes',
-    async (body) => {
-      const w = makeWorld({ deviations: [], items: [] });
-      const before = await w.onboarding.getChecklist('chk-001');
-      const { complete } = await boot(w);
-      expectError(await complete('emp-002', 'welcome', body), 400, 'invalid_request');
-      expect(await w.onboarding.getChecklist('chk-001')).toEqual(before);
-      expect(humanEvents(w)).toHaveLength(0);
-    },
-  );
+// onboarding-api OQ-1/OQ-3: the body is now the strict TaskStatusBody. The three original bodies
+// stay (they are 400 for a missing status as well); the same keys beside a valid status are added so
+// the strictness itself is still what is tested.
+describe('onboarding AT-32: the status body accepts no caller-supplied completion fields', () => {
+  it.each([
+    { completedBy: 'emp-001' },
+    { done: true },
+    { completedAt: '2020-01-01T00:00:00Z' },
+    { status: 'done', completedBy: 'emp-001' },
+    { status: 'done', done: true },
+    { status: 'done', completedAt: '2020-01-01T00:00:00Z' },
+  ])('AT-32: body %j is 400 invalid_request and nothing changes', async (body) => {
+    const w = makeWorld({ deviations: [], items: [] });
+    const before = await w.onboarding.getChecklist('chk-001');
+    const { complete } = await boot(w);
+    expectError(await complete('emp-002', 'welcome', body), 400, 'invalid_request');
+    expect(await w.onboarding.getChecklist('chk-001')).toEqual(before);
+    expect(humanEvents(w)).toHaveLength(0);
+  });
 });
 
 // ================= AT-33 =================
@@ -545,12 +617,16 @@ describe('onboarding AT-33: the read route', () => {
     const manager = await read('emp-002');
     expect(manager.status).toBe(200);
     const view = ChecklistView.parse(manager.body);
+    // onboarding-api OQ-3: every progress entry gains a `blocked` count.
     expect(view.progress).toEqual([
-      { owner: 'it', total: 2, done: 0 },
-      { owner: 'admin', total: 1, done: 0 },
-      { owner: 'manager', total: 2, done: 1 },
-      { owner: 'buddy', total: 1, done: 0 },
+      { owner: 'it', total: 2, done: 0, blocked: 0 },
+      { owner: 'admin', total: 1, done: 0, blocked: 0 },
+      { owner: 'manager', total: 2, done: 1, blocked: 0 },
+      { owner: 'buddy', total: 1, done: 0, blocked: 0 },
     ]);
+    // onboarding-api OQ-5: the view gains `newJoiner`. No profile is seeded here, so it is null;
+    // that is also why the displayName key check below still holds. (A missing profile reads as null.)
+    expect(view.newJoiner).toBeNull();
     expect(view.pendingDeviationIds).toEqual([]);
     expect((await read('emp-005')).status).toBe(200);
     expect((await read('emp-001')).status).toBe(200);

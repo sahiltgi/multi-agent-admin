@@ -3,6 +3,7 @@
 import type { Express } from 'express';
 import { runLeaveAgent, type LeaveAgentDeps } from '../agents/leave/run.js';
 import { buildLeaveTools } from '../agents/leave/tools.js';
+import { runOnboardingNotesAgent } from '../agents/onboarding/notes.js';
 import { runOnboardingAgent, type OnboardingAgentDeps } from '../agents/onboarding/run.js';
 import { buildOnboardingTools } from '../agents/onboarding/tools.js';
 import { classifyMessage } from '../agents/orchestrator/classify.js';
@@ -19,7 +20,7 @@ import { createApp } from '../http/app.js';
 import type { ApprovalApiDeps } from '../http/approvals/ports.js';
 import type { IntakeDeps } from '../intake/ports.js';
 import { createIntakeRoutes } from '../intake/routes.js';
-import { createOnboardingRoutes } from '../onboarding/routes.js';
+import { createOnboardingRoutes, type OnboardingRouteDeps } from '../onboarding/routes.js';
 import type { ServerStores } from '../persistence/mongo/connect.js';
 import type { BootFiles } from './boot.js';
 
@@ -35,7 +36,8 @@ export interface ServerParts {
   idGen: () => string;
   /** Tests only: replaces the classifyMessage and runLeaveAgent bindings. */
   agents?: Pick<IntakeDeps, 'classify' | 'runLeave'> &
-    Partial<Pick<IntakeDeps, 'runPolicyQa' | 'runOnboarding'>>;
+    Partial<Pick<IntakeDeps, 'runPolicyQa' | 'runOnboarding'>> &
+    Partial<Pick<OnboardingRouteDeps, 'runOnboardingNotes'>>;
 }
 
 /** UTC calendar date of the caller's clock (leave-agent D-13). */
@@ -133,13 +135,24 @@ export function buildApp(parts: ServerParts): Express {
       conversations: stores.conversations,
       texts: boot.chatTexts,
     }),
-    // spec onboarding, rules 24, 25: task completion and the checklist view.
+    // spec onboarding-api, rules 1, 19: create, list, read and task status.
     ...createOnboardingRoutes({
       directory: stores.directory,
       onboarding: stores.onboarding,
+      approvals: stores.approvals,
+      messages: stores.leaveRequests, // the creator can read the create trace (D-9)
       audit: stores.audit,
       clock,
       idGen,
+      idempotency: stores.idempotency,
+      policy: boot.onboardingPolicy,
+      evaluateOnboarding,
+      toIsoDate,
+      runOnboardingNotes:
+        parts.agents?.runOnboardingNotes ??
+        ((input, tasks) => runOnboardingNotesAgent(input, tasks, onboardingDeps)),
+      onboardingTexts: boot.onboardingTexts,
+      intakeTexts: boot.intakeTexts,
     }),
   ]);
 }

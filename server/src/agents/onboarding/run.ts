@@ -34,7 +34,7 @@ export type { OnboardingAgentDeps } from './tools.js';
 class AuditWriteFailed extends Error {}
 
 /** The runtime's injection_flagged payload; only the fields copied into the agent summary. */
-const RuntimeFlag = z.looseObject({
+export const RuntimeFlag = z.looseObject({
   input: z.looseObject({
     source: z.enum(['user', 'document', 'tool']),
     tool: z.string().optional(),
@@ -42,10 +42,23 @@ const RuntimeFlag = z.looseObject({
     reason: z.string().optional(),
   }),
 });
-type RuntimeFlag = z.infer<typeof RuntimeFlag>['input'];
+export type RuntimeFlag = z.infer<typeof RuntimeFlag>['input'];
+
+/** An audit sink that notes this run's injection flags and passes every event on (rule 17). */
+export function flagTap(inner: AuditSink, requestId: string, flags: RuntimeFlag[]): AuditSink {
+  return {
+    write(event) {
+      if (event.eventType === 'injection_flagged' && event.traceId === requestId) {
+        const flag = RuntimeFlag.safeParse(event.payload);
+        if (flag.success) flags.push(flag.data.input);
+      }
+      return inner.write(event);
+    },
+  };
+}
 
 /** Byte-identical file text, or null when missing, blank or unreadable (fail closed). */
-async function loadText(
+export async function loadText(
   deps: OnboardingAgentDeps,
   key: OnboardingAgentTextKey,
 ): Promise<string | null> {
@@ -57,10 +70,16 @@ async function loadText(
   }
 }
 
-/** Rule 14: is this set of proposals coherent with the created checklist? */
-function deviationsValid(checklist: CreateChecklistOutput, changes: DeviationChange[]): boolean {
+/**
+ * Rule 14: is this set of proposals coherent with the code-built tasks? Shared with the notes-mode
+ * agent (spec onboarding-api, rule 4), which validates against the same tasks.
+ */
+export function deviationsValid(
+  tasks: readonly { id: string; dependsOn: readonly string[] }[],
+  changes: readonly DeviationChange[],
+): boolean {
   if (changes.length > MAX_DEVIATIONS_PER_RUN) return false;
-  const onChecklist = new Set(checklist.tasks.map((t) => t.id));
+  const onChecklist = new Set(tasks.map((t) => t.id));
   const removed = new Set<string>();
   const titles = new Set<string>();
   for (const c of changes) {
@@ -79,9 +98,7 @@ function deviationsValid(checklist: CreateChecklistOutput, changes: DeviationCha
     }
   }
   // A remaining template task may not depend on a removed one.
-  return !checklist.tasks.some(
-    (t) => !removed.has(t.id) && t.dependsOn.some((d) => removed.has(d)),
-  );
+  return !tasks.some((t) => !removed.has(t.id) && t.dependsOn.some((d) => removed.has(d)));
 }
 
 type Built =
@@ -142,7 +159,7 @@ async function build(
     return { index, change: out.change, rationale: out.rationale };
   });
   const changes = deviations.map((d) => d.change);
-  if (!deviationsValid(checklist, changes)) return escalate('invalid_deviation');
+  if (!deviationsValid(checklist.tasks, changes)) return escalate('invalid_deviation');
 
   // OQ-7: a start date before today (injected clock, UTC) is asked again.
   const today = deps.toIsoDate(deps.runtime.clock.nowIso());
@@ -189,15 +206,7 @@ export async function runOnboardingAgent(
   const { runtime } = deps;
   // Rule 17: note this run's injection flags; the run itself never changes because of them.
   const flags: RuntimeFlag[] = [];
-  const tap: AuditSink = {
-    write(event) {
-      if (event.eventType === 'injection_flagged' && event.traceId === requestId) {
-        const flag = RuntimeFlag.safeParse(event.payload);
-        if (flag.success) flags.push(flag.data.input);
-      }
-      return runtime.audit.write(event);
-    },
-  };
+  const tap = flagTap(runtime.audit, requestId, flags);
 
   const run = await createRuntime(ONBOARDING_CONFIG, { ...runtime, audit: tap }).run(parsed);
   const flagged = flags.length > 0;
