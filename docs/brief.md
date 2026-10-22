@@ -145,7 +145,7 @@ One React app; the logged-in role decides what is visible.
 - `AGENTS.md` as single source of truth, imported by `CLAUDE.md`; path-scoped rules in `.claude/rules/`.
 - `specs/`: one spec per feature, written before code.
 - `docs/adr/`: short architecture decision records.
-- `.claude/agents/`: spec-writer, test-writer, code-reviewer, policy-auditor, security-reviewer.
+- `.claude/agents/`: spec-writer, test-writer, eval-drafter, code-reviewer, policy-auditor, security-reviewer.
 - `.claude/skills/`: new-feature, run-evals, change-policy, fix-issue, open-pr (manual-only).
 - Hooks: format, lint and related tests after edits; destructive commands blocked;
   writes to secrets, CI and agent config blocked; edits to `policies/` blocked

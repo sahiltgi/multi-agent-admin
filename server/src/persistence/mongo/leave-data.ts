@@ -10,7 +10,7 @@ import { literal, NO_STORAGE_KEYS, parseAllStored, parseStored } from './read.js
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Statuses that count as away in othersOnLeave (D-14). */
-const COUNTED_STATUSES = ['approved', 'pending_approval'] as const;
+export const COUNTED_STATUSES = ['approved', 'pending_approval'] as const;
 
 function dayMs(isoDate: string): number {
   const [y, m, d] = isoDate.split('-').map(Number);

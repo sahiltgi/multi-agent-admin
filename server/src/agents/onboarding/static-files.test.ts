@@ -1,8 +1,10 @@
 // Static files for the Onboarding Agent (spec onboarding, rules 11, 15, 27; eval cases EV-1 to
-// EV-30). The prompt, tool descriptions and fixed texts are committed; the eval file parses.
+// EV-40). The prompt, tool descriptions and fixed texts are committed; the eval file parses.
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
+import { loadOnboardingPolicy } from '../../policies/load.js';
 import { ClarifyingQuestion } from '../orchestrator/schemas.js';
 import { OnboardingEvalCase } from './schemas.js';
 
@@ -10,20 +12,49 @@ const root = (rel: string): string => fileURLToPath(new URL(`../../../../${rel}`
 const read = (rel: string): string => readFileSync(root(rel), 'utf8');
 
 describe('onboarding static files', () => {
-  it('onboarding evals: cases.jsonl parses as OnboardingEvalCase with ids exactly EV-1 to EV-30', () => {
+  it('onboarding evals: cases.jsonl parses as OnboardingEvalCase with ids exactly EV-1 to EV-40', () => {
     const file = root('evals/onboarding/cases.jsonl');
     expect(existsSync(file)).toBe(true);
     const lines = readFileSync(file, 'utf8')
       .split('\n')
       .filter((l) => l.trim() !== '');
     const ids = lines.map((line) => OnboardingEvalCase.parse(JSON.parse(line)).id);
-    const expected = Array.from({ length: 30 }, (_, i) => `EV-${String(i + 1)}`);
+    const expected = Array.from({ length: 40 }, (_, i) => `EV-${String(i + 1)}`);
     expect(new Set(ids).size).toBe(ids.length);
     expect([...ids].sort()).toEqual([...expected].sort());
     const text = readFileSync(file, 'utf8');
     for (const id of text.match(/emp-\d+/g) ?? []) expect(id).toMatch(/^emp-\d{3}$/);
     for (const email of text.match(/[\w.+-]+@[\w.-]+/g) ?? [])
       expect(email).toMatch(/\.(example|test)$/);
+  });
+
+  it('onboarding evals: every expected template and template task id exists in the v1 templates', () => {
+    const templates = new Map(
+      Object.entries(loadOnboardingPolicy(root('policies/onboarding/v1.yaml')).policy.templates),
+    );
+    const Expected = z.looseObject({
+      createChecklist: z.looseObject({ templateId: z.string() }).optional(),
+      deviationChanges: z
+        .array(z.looseObject({ templateTaskId: z.string().optional() }))
+        .optional(),
+    });
+    const lines = read('evals/onboarding/cases.jsonl')
+      .split('\n')
+      .filter((l) => l.trim() !== '');
+    for (const line of lines) {
+      const c = OnboardingEvalCase.parse(JSON.parse(line));
+      const e = Expected.parse(c.expected);
+      if (e.createChecklist === undefined) continue;
+      const template = templates.get(e.createChecklist.templateId);
+      expect(template, `${c.id}: ${e.createChecklist.templateId}`).toBeDefined();
+      const taskIds = new Set(template?.tasks.map((t) => t.id));
+      for (const change of e.deviationChanges ?? []) {
+        if (change.templateTaskId !== undefined)
+          expect(taskIds.has(change.templateTaskId), `${c.id}: ${change.templateTaskId}`).toBe(
+            true,
+          );
+      }
+    }
   });
 
   it('onboarding-api evals: cases.jsonl parses as OnboardingEvalCase with ids exactly EV-1 to EV-25', () => {

@@ -230,10 +230,12 @@ export const OnboardingEvalCase = z
     category: z.enum(['routing', 'extraction', 'verdict', 'citation', 'injection']),
     actor: z.object({ employeeId: z.string().regex(/^emp-\d{3}$/), role: Role }).strict(),
     endpoint: z.enum(['messages', 'chat', 'approvals', 'onboarding']),
+    asOf: IsoDate.optional(), // the run clock's date, so start dates don't go stale (eval growth)
     userText: z.string().min(1),
     expected: z.record(z.string(), z.unknown()),
     tags: z.array(z.string()),
     notes: z.string().min(1),
+    reviewed: z.boolean().optional(), // set by a human labeller only (eval growth)
   })
   .strict();
 export type OnboardingEvalCase = z.infer<typeof OnboardingEvalCase>;

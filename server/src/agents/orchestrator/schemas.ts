@@ -132,6 +132,7 @@ export const OrchestratorEvalCase = z
     expected: z.object({ label: RouteLabel, injectionFlagged: z.boolean() }).strict(),
     tags: z.array(z.string().regex(/^[a-z][a-z0-9_]*$/)),
     notes: z.string().optional(),
+    reviewed: z.boolean().optional(), // set by a human labeller only (eval growth)
   })
   .strict();
 export type OrchestratorEvalCase = z.infer<typeof OrchestratorEvalCase>;

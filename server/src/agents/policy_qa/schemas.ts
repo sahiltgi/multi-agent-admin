@@ -183,6 +183,7 @@ export const QaEvalCase = z
       .strict(),
     tags: z.array(z.string().regex(/^[a-z][a-z0-9_:-]*$/)),
     notes: z.string().min(1),
+    reviewed: z.boolean().optional(), // set by a human labeller only (eval growth)
   })
   .strict();
 export type QaEvalCase = z.infer<typeof QaEvalCase>;
