@@ -1,8 +1,8 @@
 // Pure wiring of the running server (spec mongo-persistence, rule 10 step 7; D-18). Reads no env
 // and opens no connection: everything arrives in ServerParts, so tests use in-memory ports.
 import type { Express } from 'express';
-import { runLeaveAgent, type LeaveAgentDeps } from '../agents/leave/run.js';
-import { buildLeaveTools } from '../agents/leave/tools.js';
+import { buildLeaveAgentDeps } from '../agents/leave/deps.js';
+import { runLeaveAgent } from '../agents/leave/run.js';
 import { runOnboardingNotesAgent } from '../agents/onboarding/notes.js';
 import { runOnboardingAgent, type OnboardingAgentDeps } from '../agents/onboarding/run.js';
 import { buildOnboardingTools } from '../agents/onboarding/tools.js';
@@ -14,12 +14,12 @@ import type { ModelClient } from '../agents/schemas.js';
 import { detectInjectionHeuristic } from '../agents/untrusted.js';
 import { createChatRoutes } from '../chat/routes.js';
 import type { LoadedLeavePolicy } from '../gate/leave-policy.schema.js';
-import { evaluateLeave } from '../gate/leave.js';
 import { evaluateOnboarding } from '../gate/onboarding.js';
 import { createApp } from '../http/app.js';
 import type { ApprovalApiDeps } from '../http/approvals/ports.js';
 import type { IntakeDeps } from '../intake/ports.js';
 import { createIntakeRoutes } from '../intake/routes.js';
+import { toIsoDate } from '../lib/dates.js';
 import { createOnboardingRoutes, type OnboardingRouteDeps } from '../onboarding/routes.js';
 import type { ServerStores } from '../persistence/mongo/connect.js';
 import type { BootFiles } from './boot.js';
@@ -40,9 +40,6 @@ export interface ServerParts {
     Partial<Pick<OnboardingRouteDeps, 'runOnboardingNotes'>>;
 }
 
-/** UTC calendar date of the caller's clock (leave-agent D-13). */
-const toIsoDate = (nowIso: string): string => nowIso.slice(0, 10);
-
 export function buildApp(parts: ServerParts): Express {
   const { boot, stores, clock, idGen } = parts;
 
@@ -58,16 +55,13 @@ export function buildApp(parts: ServerParts): Express {
     idGen,
     detectInjection: detectInjectionHeuristic,
   };
-  const leaveDeps: LeaveAgentDeps = {
+  const leaveDeps = buildLeaveAgentDeps({
     runtime,
     data: stores.leaveData,
     policy: parts.policy,
-    evaluateLeave,
-    toIsoDate,
     texts: boot.leaveTexts,
     toolDescriptions: boot.leaveToolDescriptions,
-  };
-  for (const tool of buildLeaveTools(leaveDeps)) registry.register(tool);
+  });
   // spec onboarding, rules 10, 27: the three onboarding tools, the boot policy and the real gate.
   const onboardingDeps: OnboardingAgentDeps = {
     runtime,
