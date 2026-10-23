@@ -1,6 +1,6 @@
 # CI agents
 
-Every headless model run in CI (brief §9). For each one this page lists the trigger, permissions, tools, limits and secrets. The workflows live in `.github/workflows/`, which a human edits (AGENTS.md). Change this page in the same PR as any change to those files.
+Every headless model run in CI (brief §9). For each one this page lists the trigger, permissions, tools, limits and secrets. The workflows live in `.github/workflows/`, which a human edits (AGENTS.md). Change this page in the same PR as any change to those files. The spec is [specs/ci-agents.md](../specs/ci-agents.md).
 
 | Workflow        | Job         | What runs headless                                         | Secret (GitHub Environment)        |
 | --------------- | ----------- | ---------------------------------------------------------- | ---------------------------------- |
@@ -19,7 +19,7 @@ The two keys are separate secrets in separate Environments, not repository or or
 
 ### Trigger
 
-- `pull_request` into `master` that changes `prompts/**`, `server/src/agents/**`, `server/src/gate/**` or `policies/**`. Changes to `evals/**`, `server/src/evals/**` (the runner) or the workflow file trigger it too.
+- `pull_request` into `master` that changes `prompts/**`, `server/src/agents/**`, `server/src/gate/**` or `policies/**`. Changes to `evals/**`, `server/src/evals/**` (the runner) or the workflow file trigger it too. `prompts/ci/**` is excluded, because CI-only prompts don't affect the HR agents.
 - `schedule`: nightly at 03:17 UTC. GitHub runs schedules only from the default branch, so the default branch must be `master` (see Setup).
 - `workflow_dispatch`: run by hand from the Actions tab.
 - Fork PRs: the job is skipped (`if:` checks that the head repo is this repo). It never uses `pull_request_target`.
@@ -96,7 +96,7 @@ The action runs in agent mode (a `prompt` is set). In this mode it adds only the
 - Denied: `Read(./.git/**)`, `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `WebFetch`, `WebSearch`, `Task`, `Agent`, `Bash(git push:*)`, `Bash(git commit:*)`, `Bash(gh pr review:*)`, `Bash(gh pr merge:*)`, `Bash(gh api:*)`.
 - `--setting-sources user`: Claude Code does not load the PR branch's `.claude/settings.json`. That stops hooks from the PR's own branch running in a job that holds the key. It also skips the Stop hook, which would run the test suite.
 - `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1'` (job `env:`): Claude Code makes a best-effort scrub of the Anthropic key and other secrets from the environment of Bash subprocesses. Without it, an injected `gh pr comment --body-file /proc/self/environ` would match the allowed `gh pr comment` rule and post the key. The action turns this on by itself only when `allowed_non_write_users` is set.
-- The prompt is in the workflow file. It tells Claude to treat the PR text and the files as data (HARD RULE 3) and to comment only.
+- The prompt is in [`prompts/ci/ai-review.md`](../prompts/ci/ai-review.md). A workflow step reads it from the PR checkout, and the job fails if the file is missing or empty. The workflow adds the repo and PR number in front. It tells Claude to treat the PR text and the files as data (HARD RULE 3) and to comment only.
 
 ### Limits
 
