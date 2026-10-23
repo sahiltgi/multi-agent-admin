@@ -2,14 +2,14 @@
 
 Every headless model run in CI (brief §9). For each one this page lists the trigger, permissions, tools, limits and secrets. The workflows live in `.github/workflows/`, which a human edits (AGENTS.md). Change this page in the same PR as any change to those files. The spec is [specs/ci-agents.md](../specs/ci-agents.md).
 
-| Workflow        | Job         | What runs headless                                         | Secret (GitHub Environment)        |
-| --------------- | ----------- | ---------------------------------------------------------- | ---------------------------------- |
-| `evals.yml`     | `evals`     | `npm run evals -- <agent>` for orchestrator and leave      | `ANTHROPIC_API_KEY` in `evals`     |
-| `ai-review.yml` | `ai-review` | Claude Code via `anthropics/claude-code-action`, PR review | `ANTHROPIC_API_KEY` in `ai-review` |
+| Workflow        | Job         | What runs headless                                         | Secret (repository)        |
+| --------------- | ----------- | ---------------------------------------------------------- | -------------------------- |
+| `evals.yml`     | `evals`     | `npm run evals -- <agent>` for orchestrator and leave      | `ANTHROPIC_API_KEY_EVALS`  |
+| `ai-review.yml` | `ai-review` | Claude Code via `anthropics/claude-code-action`, PR review | `ANTHROPIC_API_KEY_REVIEW` |
 
-The two keys are separate secrets in separate Environments, not repository or organisation secrets. Only a job that declares `environment: evals` or `environment: ai-review` can read them. Because deployment branches are unrestricted (see Setup), that includes a job in a workflow file edited on any pushed branch. See Caveats.
+The two keys are separate repository secrets, each a different Anthropic key with its own spend limit. GitHub Environments would scope each key to one job, but this is a private repo on a personal GitHub Free account, where Environments aren't available. A repository secret can be read by any workflow in the repo, including one edited on a pushed branch. Only the two model jobs reference the keys, and only on the steps that need them. See Caveats.
 
-`ci.yml` (verify, gitleaks, dependency review, CodeQL) calls no model and uses no secret, so it isn't listed here. See [ai-policy.md](ai-policy.md#git-hooks-and-ci).
+`ci.yml` (verify with `npm audit`, and gitleaks) calls no model and uses no secret, so it isn't listed here. See [ai-policy.md](ai-policy.md#git-hooks-and-ci).
 
 **Two agents only, for now:** every case in `evals/policy_qa/cases.jsonl` and `evals/onboarding/cases.jsonl` is tagged `blocked:no-runner`, so the runner skips them. An agent with no scored case fails its threshold closed (`server/src/evals/summary.ts`), so a full `npm run evals` would always exit 1. CI therefore runs only `npm run evals -- orchestrator` and `npm run evals -- leave`. Once those cases can run, add a step for each agent, or go back to a single `npm run evals`, and raise the job timeout (see Limits).
 
@@ -61,7 +61,7 @@ There are 40 cases per agent today, and CI runs only the orchestrator and leave 
 
 ### Secrets
 
-- `ANTHROPIC_API_KEY` from the `evals` Environment, set in `env:` on the two `npm run evals -- <agent>` steps only. `npm ci` and the upload step never see it.
+- The repository secret `ANTHROPIC_API_KEY_EVALS`, set as `ANTHROPIC_API_KEY` in `env:` on the two `npm run evals -- <agent>` steps only. `npm ci` and the upload step never see it.
 - CI has no `.env`. `--env-file-if-exists` skips it, and the runner fails with exit 2 if the key is empty.
 
 ### Outputs
@@ -105,17 +105,14 @@ The action runs in agent mode (a `prompt` is set). In this mode it adds only the
 
 ### Secrets
 
-- `ANTHROPIC_API_KEY` from the `ai-review` Environment. Use a different key from the evals key, with its own spend limit.
+- The repository secret `ANTHROPIC_API_KEY_REVIEW`, passed as the action's `anthropic_api_key`. It is a different key from the evals key, with its own spend limit.
 - `GITHUB_TOKEN`: the job's own token, scoped as above, which expires when the job ends.
 
 ## Setup (human, once)
 
 1. Make `master` the default branch (Settings → General). The nightly evals don't run until then.
-2. Create the Environments `evals` and `ai-review` (Settings → Environments).
-   - Add an `ANTHROPIC_API_KEY` secret to each, using two different keys, each with a spend limit in the Anthropic Console.
-   - Leave deployment branches unrestricted, because PRs run from feature branches.
-   - Optional: add required reviewers to an Environment to approve each run by hand before it spends credit.
-3. For `ci.yml` on this private repo: `dependency-review` needs the dependency graph, and `dependency-review` and CodeQL both need GitHub Code Security (Advanced Security). On a user-owned private repo, Code Security may not be available. Then either make the repo public, move it to an organisation with Code Security, or drop those two jobs from `ci.yml` and their part of the row in ai-policy.md.
+2. In the Anthropic Console, create two workspaces (e.g. `ci-evals` and `ci-review`), each with a monthly spend limit, and one API key in each.
+3. Add both keys as repository secrets (Settings → Secrets and variables → Actions): `ANTHROPIC_API_KEY_EVALS` and `ANTHROPIC_API_KEY_REVIEW`.
 4. Commit `.github/workflows/ci.yml`, `.github/workflows/evals.yml` and `.github/workflows/ai-review.yml`.
 
 ## Caveats
@@ -124,9 +121,9 @@ The action runs in agent mode (a `prompt` is set). In this mode it adds only the
 - **Same-repo PR code runs with the key.** Fork PRs are skipped for this reason. A `pull_request` run uses the PR branch's copy of the code and of the workflow file. So anyone who can push a branch here can:
   - change the agent code that `evals` runs with the key,
   - loosen `ai-review`'s tool lists,
-  - add a job that declares either Environment.
+  - add a job that reads either repository secret.
 
-  CODEOWNERS and branch protection cover what merges, not what runs on a PR. Each key therefore has its own spend limit. Add required reviewers to the Environments if that trust boundary is too wide.
+  CODEOWNERS and branch protection cover what merges, not what runs on a PR. Each key therefore has its own spend limit. If the repo gains collaborators, move to GitHub Pro or an organisation and put the keys back into Environments, with required reviewers.
 
 - **Dependabot PRs** get no Actions secrets. They rarely touch the eval paths. If one does, the eval steps exit 2.
-- **`ci.yml` on a private repo.** This repo is private. `dependency-review` and the CodeQL upload need GitHub Advanced Security (Code Security) on private repos. Without it those two jobs fail. Then turn it on, or drop those jobs and their row in ai-policy.md.
+- **No CodeQL or dependency review.** Both need GitHub Code Security, which a private repo on a personal account can't have. `npm audit --audit-level=high` in `verify` covers known-vulnerable packages. Strict TypeScript and ESLint cover some of what CodeQL would find. Add both jobs back if the repo moves to an organisation with Code Security, or is made public.
