@@ -24,11 +24,6 @@ jobs:
       github.event.pull_request.user.type != 'Bot'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      # Strip the Anthropic key and other secrets from the env of Bash subprocesses (gh), so an
-      # injected `gh pr comment --body-file /proc/self/environ` can't post them. The action only
-      # turns this on by itself for allowed_non_write_users.
-      CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1'
     permissions:
       contents: read # no write: git push fails even if attempted
       pull-requests: write # PR comments and inline review comments only
@@ -62,10 +57,18 @@ jobs:
 
             ${{ steps.prompt.outputs.text }}
           # --setting-sources user: skip the PR's own .claude/settings.json, so hooks from the
-          # PR branch never run in this job (the Stop hook would also run the test suite).
-          # Read(./.git/**) is denied because the action writes the job token into .git/config.
+          # PR branch never run in this job.
+          # No shell and no local file tools: the reviewer reads the PR and repo files only through
+          # the GitHub API (the GitHub MCP server, in its own container with just the job token) and
+          # can only comment. Nothing it can call reaches the Anthropic key in its process env, the
+          # MCP config on its command line, or the token the action writes into .git/config.
+          # Read, Grep and Glob need no permission by default, so they are denied explicitly.
+          # The GitHub MCP server exposes all its tools, so its write tools are denied by name too,
+          # on top of the allowlist and the token's scopes.
+          # --strict-mcp-config: only the action's MCP servers, never a .mcp.json from the repo.
           claude_args: |
             --max-turns 15
             --setting-sources user
-            --allowedTools "Read,Grep,Glob,mcp__github_inline_comment__create_inline_comment,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*)"
-            --disallowedTools "Read(./.git/**),Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch,Task,Agent,Bash(git push:*),Bash(git commit:*),Bash(gh pr review:*),Bash(gh pr merge:*),Bash(gh api:*)"
+            --strict-mcp-config
+            --allowedTools "mcp__github__get_pull_request,mcp__github__get_pull_request_diff,mcp__github__get_pull_request_files,mcp__github__get_file_contents,mcp__github__add_issue_comment,mcp__github_inline_comment__create_inline_comment"
+            --disallowedTools "Bash,Read,Grep,Glob,Edit,Write,MultiEdit,NotebookEdit,NotebookRead,WebFetch,WebSearch,Task,Agent,mcp__github__create_and_submit_pull_request_review,mcp__github__create_pending_pull_request_review,mcp__github__submit_pending_pull_request_review,mcp__github__add_comment_to_pending_review,mcp__github__delete_pending_pull_request_review,mcp__github__merge_pull_request,mcp__github__update_pull_request,mcp__github__update_pull_request_branch,mcp__github__create_pull_request,mcp__github__request_copilot_review,mcp__github__create_branch,mcp__github__create_or_update_file,mcp__github__delete_file,mcp__github__push_files,mcp__github__create_repository,mcp__github__fork_repository,mcp__github__create_issue,mcp__github__update_issue,mcp__github__assign_copilot_to_issue"
