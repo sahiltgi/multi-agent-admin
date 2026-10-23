@@ -5,6 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { LEAVE_CONFIG } from '../../agents/leave/config.js';
+import { ONBOARDING_CONFIG } from '../../agents/onboarding/config.js';
+import { ORCHESTRATOR_CONFIG } from '../../agents/orchestrator/config.js';
+import { POLICY_QA_CONFIG } from '../../agents/policy_qa/config.js';
 import { handbookBody, handbookSections } from '../../domain/handbook.js';
 import { ApprovalItem } from '../../domain/schemas.js';
 import { InMemoryApprovalStore } from '../../http/approvals/in-memory.js';
@@ -105,7 +109,10 @@ const FILLER: Record<AgentName, Rec> = {
 };
 
 const dirs: string[] = [];
-function makeDir(lines: Partial<Record<AgentName, (Rec | string)[]>>): string {
+function makeDir(
+  lines: Partial<Record<AgentName, (Rec | string)[]>>,
+  thresholds?: Record<AgentName, Rec>,
+): string {
   const dir = mkdtempSync(join(tmpdir(), 'evals-score-'));
   dirs.push(dir);
   for (const agent of ['orchestrator', 'leave', 'policy_qa', 'onboarding'] as const) {
@@ -123,7 +130,31 @@ function makeDir(lines: Partial<Record<AgentName, (Rec | string)[]>>): string {
     join(dir, 'thresholds.yaml'),
     JSON.stringify({
       version: 1,
-      agents: { orchestrator: agentT, leave: agentT, policy_qa: agentT, onboarding: agentT },
+      agents: thresholds ?? {
+        orchestrator: agentT,
+        leave: agentT,
+        policy_qa: agentT,
+        onboarding: agentT,
+      },
+    }),
+  );
+  // rule 25: evals/pricing.yaml with every shipped model priced (JSON is valid YAML)
+  writeFileSync(
+    join(dir, 'pricing.yaml'),
+    JSON.stringify({
+      version: 1,
+      asOf: '2026-10-22',
+      currency: 'USD',
+      models: Object.fromEntries(
+        [
+          ...new Set([
+            ORCHESTRATOR_CONFIG.model,
+            LEAVE_CONFIG.model,
+            POLICY_QA_CONFIG.model,
+            ONBOARDING_CONFIG.model,
+          ]),
+        ].map((m) => [m, { inputPerMTok: 3, outputPerMTok: 15 }]),
+      ),
     }),
   );
   return dir;
@@ -155,7 +186,7 @@ async function runWith(dir: string, script: Rec[], over: Partial<EvalDeps> = {})
 }
 
 function caseOf(r: Ran, agent: AgentName, id: string): CaseResult {
-  const c = r.outcome.run?.cases.find((x) => x.agent === agent && x.id === id);
+  const c = r.outcome.runs.flatMap((x) => x.cases).find((x) => x.agent === agent && x.id === id);
   return must(c);
 }
 const checkOf = (c: CaseResult, field: string) => must(c.checks.find((k) => k.field === field));
@@ -510,5 +541,127 @@ describe('eval-runner AT-18: per-agent scorers', () => {
       expect(Object.getOwnPropertyNames(Object.prototype).sort()).toEqual(before);
       expect(({} as Rec).polluted).toBeUndefined();
     });
+  });
+});
+
+// ---------- AT-24 (rules 21, 23; D-19) ----------
+
+describe('eval-runner AT-24: escalation thresholds fail closed', () => {
+  const none = { categories: {} };
+  const thresholdsWith = (leave: Rec): Record<AgentName, Rec> => ({
+    orchestrator: none,
+    leave,
+    policy_qa: none,
+    onboarding: none,
+  });
+  // No case expects or gets ESCALATE_TO_HR, so precision and recall have zero denominators.
+  const NO_ESCALATION = leaveCase({
+    expected: { resultKind: 'card', verdict: 'ROUTE_TO_MANAGER' },
+  });
+
+  it('AT-24: with no positives, precision and recall are null and a missing threshold is null (exit 0)', async () => {
+    const dir = makeDir({ leave: [NO_ESCALATION] }, thresholdsWith(none));
+    const r = await runWith(dir, [turn(submit('tu-1', ANNUAL)), done(SUMMARY)]);
+    const leave = must(r.outcome.runs.find((x) => x.agent === 'leave'));
+    expect(leave.summary.escalation?.positive).toBe('ESCALATE_TO_HR');
+    expect(leave.summary.escalation?.precision.value).toBeNull();
+    expect(leave.summary.escalation?.recall.value).toBeNull();
+    expect(leave.summary.escalation?.recall.meetsThreshold).toBeNull();
+    expect(leave.thresholdsMet).toBe(true);
+    expect(r.outcome.exitCode).toBe(0);
+  });
+
+  it('AT-24: leave.escalation.recall 0.8 with a null recall is not met, leave thresholdsMet is false and the run exits 1', async () => {
+    const dir = makeDir(
+      { leave: [NO_ESCALATION] },
+      thresholdsWith({ categories: {}, escalation: { recall: 0.8 } }),
+    );
+    const r = await runWith(dir, [turn(submit('tu-1', ANNUAL)), done(SUMMARY)]);
+    const leave = must(r.outcome.runs.find((x) => x.agent === 'leave'));
+    expect(leave.summary.escalation?.recall).toMatchObject({
+      value: null,
+      threshold: 0.8,
+      meetsThreshold: false,
+    });
+    expect(leave.thresholdsMet).toBe(false);
+    expect(r.outcome.exitCode).toBe(1);
+    // the other agents are unaffected and every file is still written
+    expect(r.outcome.runs.filter((x) => x.thresholdsMet)).toHaveLength(3);
+    expect(readdirSync(join(dir, 'results'))).toHaveLength(4);
+  });
+});
+
+// ---------- AT-28 runner, D-21: a case that calls two models ----------
+
+describe('eval-runner AT-28: per-model pricing through the app', () => {
+  it('AT-28: a policy_qa case prices the intake orchestrator calls and the Q&A call each at its own model (D-21)', async () => {
+    const dir = makeDir({
+      policy_qa: [
+        {
+          id: 'EV-1',
+          category: 'citation',
+          actor: ACTOR,
+          endpoint: 'messages',
+          userText: 'How many days of notice do I need to give?',
+          expected: { outcome: 'reply' },
+          tags: [],
+          notes: 'synthetic',
+        },
+      ],
+    });
+    writeFileSync(
+      join(dir, 'pricing.yaml'),
+      JSON.stringify({
+        version: 1,
+        asOf: '2026-10-22',
+        currency: 'USD',
+        models: {
+          [ORCHESTRATOR_CONFIG.model]: { inputPerMTok: 1, outputPerMTok: 5 },
+          [POLICY_QA_CONFIG.model]: { inputPerMTok: 3, outputPerMTok: 15 },
+        },
+      }),
+    );
+    // Two orchestrator calls (route, then done), then one Q&A call; each reports 120/30.
+    const r = await runWith(dir, [...route('policy_qa'), done('Synthetic answer.')]);
+    const c = caseOf(r, 'policy_qa', 'EV-1');
+    expect(r.model.calls).toBe(3);
+    expect(c.tokens).toEqual({ input: 360, output: 90 });
+    const expected = (240 * 1 + 60 * 5 + 120 * 3 + 30 * 15) / 1e6; // 0.00135
+    expect(Math.abs(c.costUsd - expected)).toBeLessThan(1e-12);
+  });
+});
+
+// ---------- AT-31 (rule 5; D-16) ----------
+
+describe('eval-runner AT-31: no temperature parameter', () => {
+  it('AT-31: no model request for an orchestrator, leave or policy_qa case has a temperature key', async () => {
+    const dir = makeDir({
+      orchestrator: [orchCase()],
+      leave: [leaveCase()],
+      policy_qa: [
+        {
+          id: 'EV-1',
+          category: 'citation',
+          actor: ACTOR,
+          endpoint: 'messages',
+          userText: 'How many days of notice do I need to give?',
+          expected: { outcome: 'reply' },
+          tags: [],
+          notes: 'synthetic',
+        },
+      ],
+    });
+    const r = await runWith(dir, [
+      ...route('leave'), // orchestrator case: 2 model calls
+      turn(submit('tu-1', ANNUAL)), // leave case
+      done(SUMMARY),
+      ...route('policy_qa'), // policy_qa case: orchestrator, then the Q&A call
+      done('Synthetic answer.'),
+    ]);
+    // orchestrator, leave and policy_qa cases each made at least one model call
+    expect(r.model.requests.length).toBeGreaterThanOrEqual(5);
+    for (const req of r.model.requests) {
+      expect(Object.keys(req)).not.toContain('temperature');
+    }
   });
 });

@@ -1,21 +1,19 @@
-// The eval runner (spec eval-runner). Checks the key, reads thresholds and cases, then runs every
-// eligible case end to end on a fresh seeded world, scores it in code, summarises, and writes one
-// results file. Exit 0 = thresholds met, 1 = missed, 2 = setup error with no results file.
+// The eval runner (spec eval-runner). Checks the key, reads thresholds, pricing and cases, then runs
+// every eligible case of the selected agents end to end on a fresh seeded world, scores and prices
+// it in code, and writes one results file per agent (D-18). Exit 0 = every agent met its
+// thresholds, 1 = one missed, 2 = setup error with no results file, or a failed write (D-24).
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AnthropicEnv } from '../agents/anthropic-client.js';
-import { LEAVE_CONFIG } from '../agents/leave/config.js';
-import { ONBOARDING_CONFIG } from '../agents/onboarding/config.js';
-import { ORCHESTRATOR_CONFIG } from '../agents/orchestrator/config.js';
-import { POLICY_QA_CONFIG } from '../agents/policy_qa/config.js';
 import type { Clock, Scheduler } from '../agents/runtime.js';
 import type { ModelClient } from '../agents/schemas.js';
 import { loadLeavePolicy } from '../policies/load.js';
 import { fixtures } from '../seeds/fixtures.js';
 import { loadBootFiles, type BootFiles } from '../server/boot.js';
 import { timerScheduler } from '../server/runtime.js';
+import { agentConfig, priceCase, requiredModels } from './cost.js';
 import { drive } from './drivers.js';
-import { readCases, readThresholds, SetupError, type LoadedCase } from './load.js';
+import { readCases, readPricing, readThresholds, SetupError, type LoadedCase } from './load.js';
 import { watchModel, type WatchedModel } from './model.js';
 import {
   observeInvariant,
@@ -25,13 +23,16 @@ import {
   observePolicyQa,
   type RunOutput,
 } from './observe.js';
-import { writeResults, summaryLines } from './results.js';
+import { summaryLines, writeExclusive, writeResults, type WriteFile } from './results.js';
 import {
+  CASE_SOURCES,
+  EVAL_AGENTS,
   EvalRun,
   type AgentSummary,
   type CaseResult,
   type ErrorCode,
   type EvalAgent,
+  type Pricing,
   type SkipReason,
 } from './schemas.js';
 import {
@@ -42,19 +43,22 @@ import {
   type Scored,
 } from './score/agents.js';
 import { token, tokens } from './score/checks.js';
+import { escalationSummary } from './score/escalation.js';
 import { invariantCheck } from './score/invariant.js';
-import { summarize } from './summary.js';
+import { agentMet, summarize } from './summary.js';
 import { createCaseWorld, type CaseWorld } from './world.js';
 
 export interface EvalDeps {
   env: Readonly<Record<string, string | undefined>>; // ANTHROPIC_API_KEY
-  evalsDir: string; // holds <agent>/cases.jsonl, thresholds.yaml and results/
+  evalsDir: string; // holds <agent>/cases.jsonl, thresholds.yaml, pricing.yaml and results/
   model: ModelClient;
   realClock: Clock; // run start and results date; each case clock is offset from it (rule 9)
   scheduler?: Scheduler;
   gitCommit?: string | null;
   stdout: (line: string) => void;
   stderr: (line: string) => void;
+  /** Creates one results file exclusively (flag wx); defaults to the real file system. */
+  writeFile?: WriteFile;
   onCaseEnd?: (c: {
     agent: string;
     id: string;
@@ -65,8 +69,8 @@ export interface EvalDeps {
 
 export interface EvalOutcome {
   exitCode: 0 | 1 | 2;
-  run: EvalRun | null;
-  resultsPath: string | null;
+  runs: EvalRun[]; // one per agent that ran, in CASE_SOURCES order; empty on a setup exit 2
+  resultsPaths: string[]; // the files written
 }
 
 // Prompts and policies always come from the repo, never from evalsDir (rule 5).
@@ -78,6 +82,7 @@ interface Ctx {
   deps: EvalDeps;
   boot: BootFiles;
   policy: Policy;
+  pricing: Pricing;
   scheduler: Scheduler;
 }
 
@@ -136,6 +141,8 @@ async function runCase(c: LoadedCase, ctx: Ctx): Promise<CaseResult> {
     errorCode: null,
     checks: [],
     latencyMs: null,
+    tokens: { input: 0, output: 0 }, // no model call (rule 24)
+    costUsd: 0,
   };
   const skip = skipOf(c);
   if (skip !== null) {
@@ -162,12 +169,21 @@ async function runCase(c: LoadedCase, ctx: Ctx): Promise<CaseResult> {
     auditEvents: world.sink.events,
     firstId: world.firstId(),
   });
+  // Calls that completed count even when the case errors. An unpriced model is that case's error,
+  // never a cost of 0 (rule 24; D-21).
+  let priced: ReturnType<typeof priceCase>;
+  try {
+    priced = priceCase(world.sink.events, ctx.pricing);
+  } catch {
+    return { ...base, status: 'error', errorCode: 'run_failed', latencyMs };
+  }
+  const ran = { ...base, ...priced, latencyMs };
 
   const serverError = out !== null && 'response' in out && out.response.status >= 500;
   const error: ErrorCode | null =
     model.failure() ?? (out === null || serverError ? 'run_failed' : null);
   if (error !== null || out === null) {
-    return { ...base, status: 'error', errorCode: error ?? 'run_failed', latencyMs };
+    return { ...ran, status: 'error', errorCode: error ?? 'run_failed' };
   }
 
   // One case's failure never stops the run (rule 15): a throw while observing is that case's error.
@@ -175,7 +191,7 @@ async function runCase(c: LoadedCase, ctx: Ctx): Promise<CaseResult> {
     score(c, out, world, model, ctx.boot),
     observeInvariant(world),
   ]).catch(() => null);
-  if (graded === null) return { ...base, status: 'error', errorCode: 'run_failed', latencyMs };
+  if (graded === null) return { ...ran, status: 'error', errorCode: 'run_failed' };
   const [scored, invariant] = graded;
   const checks = [...scored.checks, invariantCheck(invariant)];
   const status =
@@ -184,7 +200,7 @@ async function runCase(c: LoadedCase, ctx: Ctx): Promise<CaseResult> {
       : checks.every((k) => k.passed)
         ? 'passed'
         : 'failed';
-  return { ...base, status, unscorableKeys: scored.unscorableKeys, checks, latencyMs };
+  return { ...ran, status, unscorableKeys: scored.unscorableKeys, checks };
 }
 
 function agentMeta(
@@ -192,55 +208,55 @@ function agentMeta(
   boot: BootFiles,
   policy: Policy,
 ): Pick<AgentSummary, 'model' | 'promptVersion' | 'policyVersion' | 'policyHash'> {
+  const { model, promptVersion } = agentConfig(agent);
   switch (agent) {
     case 'orchestrator':
-      return {
-        model: ORCHESTRATOR_CONFIG.model,
-        promptVersion: ORCHESTRATOR_CONFIG.promptVersion,
-        policyVersion: null,
-        policyHash: null,
-      };
+      return { model, promptVersion, policyVersion: null, policyHash: null };
     case 'leave':
       return {
-        model: LEAVE_CONFIG.model,
-        promptVersion: LEAVE_CONFIG.promptVersion,
+        model,
+        promptVersion,
         policyVersion: policy.policyVersion,
         policyHash: policy.policyHash,
       };
     case 'policy_qa':
       return {
-        model: POLICY_QA_CONFIG.model,
-        promptVersion: POLICY_QA_CONFIG.promptVersion,
+        model,
+        promptVersion,
         policyVersion: boot.qaPolicy.policyVersion,
         policyHash: boot.qaPolicy.policyHash,
       };
     case 'onboarding':
       return {
-        model: ONBOARDING_CONFIG.model,
-        promptVersion: ONBOARDING_CONFIG.promptVersion,
+        model,
+        promptVersion,
         policyVersion: boot.onboardingPolicy.policyVersion,
         policyHash: boot.onboardingPolicy.policyHash,
       };
   }
 }
 
-export async function runEvals(deps: EvalDeps): Promise<EvalOutcome> {
+/** Runs every agent, or only `agent` when given (rule 1; D-17). */
+export async function runEvals(deps: EvalDeps, agent?: EvalAgent): Promise<EvalOutcome> {
   const fail = (message: string): EvalOutcome => {
     deps.stderr(`evals: ${message}`);
-    return { exitCode: 2, run: null, resultsPath: null };
+    return { exitCode: 2, runs: [], resultsPaths: [] };
   };
+  const agents: readonly EvalAgent[] = agent === undefined ? EVAL_AGENTS : [agent];
 
   // The key comes first and is never printed (rule 3).
   if (!AnthropicEnv.safeParse(deps.env).success) {
     return fail('ANTHROPIC_API_KEY is missing or empty. Set it in .env (see .env.example).');
   }
   let thresholds: ReturnType<typeof readThresholds>;
+  let pricing: ReturnType<typeof readPricing>;
   let cases: LoadedCase[];
   let boot: BootFiles;
   let policy: Policy;
   try {
     thresholds = readThresholds(deps.evalsDir);
-    cases = readCases(deps.evalsDir);
+    pricing = readPricing(deps.evalsDir, requiredModels(agents));
+    cases = readCases(deps.evalsDir, agents);
   } catch (err) {
     if (err instanceof SetupError) return fail(err.message);
     throw err;
@@ -252,28 +268,62 @@ export async function runEvals(deps: EvalDeps): Promise<EvalOutcome> {
     return fail('the prompts, fixed texts or policies could not be loaded.');
   }
 
-  const ctx: Ctx = { deps, boot, policy, scheduler: deps.scheduler ?? timerScheduler };
+  const ctx: Ctx = {
+    deps,
+    boot,
+    policy,
+    pricing: pricing.pricing,
+    scheduler: deps.scheduler ?? timerScheduler,
+  };
   const startedAt = deps.realClock.nowIso();
   const results: CaseResult[] = [];
   for (const c of cases) results.push(await runCase(c, ctx)); // one at a time (rule 7)
   const finishedAt = deps.realClock.nowIso();
 
-  const summary = summarize(results, thresholds.thresholds);
-  const run = EvalRun.parse({
-    schemaVersion: 1,
-    startedAt,
-    finishedAt,
-    gitCommit: deps.gitCommit ?? null,
-    thresholdsHash: thresholds.hash,
-    thresholdsMet: summary.thresholdsMet,
-    agents: (Object.keys(summary.agents) as EvalAgent[]).map((agent) => ({
-      agent,
-      ...agentMeta(agent, boot, policy),
-      ...summary.agents[agent],
-    })),
-    cases: results,
+  const buckets = summarize(results, thresholds.thresholds).agents;
+  const runs = CASE_SOURCES.filter((s) => agents.includes(s.agent)).map(({ agent: a }) => {
+    const own = results.filter((c) => c.agent === a);
+    const t = thresholds.thresholds.agents[a];
+    const escalation = escalationSummary(a, own, 'escalation' in t ? t.escalation : undefined);
+    const tokens = {
+      input: own.reduce((n, c) => n + c.tokens.input, 0),
+      output: own.reduce((n, c) => n + c.tokens.output, 0),
+    };
+    return EvalRun.parse({
+      schemaVersion: 2,
+      startedAt,
+      finishedAt,
+      gitCommit: deps.gitCommit ?? null,
+      thresholdsHash: thresholds.hash,
+      pricingHash: pricing.hash,
+      agent: a,
+      summary: {
+        agent: a,
+        ...agentMeta(a, boot, policy),
+        ...buckets[a],
+        escalation,
+        tokens,
+        costUsd: own.reduce((n, c) => n + c.costUsd, 0),
+      },
+      thresholdsMet: agentMet(buckets[a], escalation),
+      cases: own,
+    });
   });
-  const resultsPath = writeResults(deps.evalsDir, startedAt.slice(0, 10), run);
-  for (const line of summaryLines(run, resultsPath)) deps.stdout(line);
-  return { exitCode: run.thresholdsMet ? 0 : 1, run, resultsPath };
+
+  // Files are written only after every case ran (rule 19). A failed write keeps the files already
+  // written and lists them; its message is never printed (D-24).
+  const date = startedAt.slice(0, 10);
+  const resultsPaths: string[] = [];
+  try {
+    for (const run of runs) {
+      const base = `${date}-${run.agent}-${run.summary.promptVersion}`;
+      resultsPaths.push(writeResults(deps.evalsDir, base, run, deps.writeFile ?? writeExclusive));
+    }
+  } catch {
+    for (const p of resultsPaths) deps.stdout(`evals: results written to ${p}`);
+    deps.stderr('evals: a results file could not be written; the files listed were kept.');
+    return { exitCode: 2, runs, resultsPaths };
+  }
+  for (const line of summaryLines(runs, resultsPaths)) deps.stdout(line);
+  return { exitCode: runs.every((r) => r.thresholdsMet) ? 0 : 1, runs, resultsPaths };
 }

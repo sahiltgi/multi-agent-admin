@@ -1,10 +1,12 @@
-// Pass rates and threshold enforcement (spec eval-runner, rules 13, 20, 21; D-1, D-3, D-8). Pure.
+// Pass rates and threshold enforcement (spec eval-runner, rules 13, 20, 21, 23; D-1, D-3, D-8,
+// D-18). Pure.
 import {
   EVAL_AGENTS,
   type AgentSummary,
   type AgentThresholds,
   type Bucket,
   type CaseResult,
+  type EscalationSummary,
   type EvalAgent,
   type EvalCategory,
   type Thresholds,
@@ -90,4 +92,15 @@ export function summarize(cases: readonly CaseResult[], thresholds: Thresholds):
     ...Object.values(a.tags),
   ]);
   return { agents, thresholdsMet: buckets.every((b) => b.meetsThreshold !== false) };
+}
+
+/** One results file's thresholdsMet: no bucket and no escalation metric of the agent fails (D-18). */
+export function agentMet(buckets: AgentBuckets, escalation: EscalationSummary | null): boolean {
+  const metrics = [
+    buckets.overall,
+    ...Object.values(buckets.categories),
+    ...Object.values(buckets.tags),
+    ...(escalation === null ? [] : [escalation.precision, escalation.recall]),
+  ];
+  return metrics.every((m) => m.meetsThreshold !== false);
 }

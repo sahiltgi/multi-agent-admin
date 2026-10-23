@@ -4,6 +4,10 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { LEAVE_CONFIG } from '../agents/leave/config.js';
+import { ONBOARDING_CONFIG } from '../agents/onboarding/config.js';
+import { ORCHESTRATOR_CONFIG } from '../agents/orchestrator/config.js';
+import { POLICY_QA_CONFIG } from '../agents/policy_qa/config.js';
 import type { ModelClient } from '../agents/schemas.js';
 import { InMemoryOnboardingStore } from '../onboarding/in-memory.js';
 import { runEvals } from './run.js';
@@ -52,6 +56,25 @@ beforeEach(() => {
     );
   }
   mkdirSync(join(dir, 'results'));
+  // rule 25: every shipped model priced (JSON is valid YAML)
+  writeFileSync(
+    join(dir, 'pricing.yaml'),
+    JSON.stringify({
+      version: 1,
+      asOf: '2026-10-22',
+      currency: 'USD',
+      models: Object.fromEntries(
+        [
+          ...new Set([
+            ORCHESTRATOR_CONFIG.model,
+            LEAVE_CONFIG.model,
+            POLICY_QA_CONFIG.model,
+            ONBOARDING_CONFIG.model,
+          ]),
+        ].map((m) => [m, { inputPerMTok: 3, outputPerMTok: 15 }]),
+      ),
+    }),
+  );
   writeFileSync(
     join(dir, 'thresholds.yaml'),
     JSON.stringify({
@@ -93,7 +116,8 @@ describe('eval runner: errors after the run', () => {
       stdout: () => undefined,
       stderr: () => undefined,
     });
-    const byId = (id: string) => outcome.run?.cases.find((c) => c.agent === 'leave' && c.id === id);
+    const byId = (id: string) =>
+      outcome.runs.flatMap((r) => r.cases).find((c) => c.agent === 'leave' && c.id === id);
     expect(outcome.exitCode).not.toBe(2);
     expect(byId('EV-1')?.status).toBe('error');
     expect(byId('EV-1')?.errorCode).toBe('run_failed');

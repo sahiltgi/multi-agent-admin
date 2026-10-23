@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs';
 import net from 'node:net';
@@ -15,6 +16,9 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LEAVE_CONFIG } from '../agents/leave/config.js';
+import { ONBOARDING_CONFIG } from '../agents/onboarding/config.js';
+import { ORCHESTRATOR_CONFIG } from '../agents/orchestrator/config.js';
+import { POLICY_QA_CONFIG } from '../agents/policy_qa/config.js';
 import { runLeaveAgent } from '../agents/leave/run.js';
 import { classifyMessage } from '../agents/orchestrator/classify.js';
 import type { ModelClient, ModelRequest } from '../agents/schemas.js';
@@ -135,6 +139,28 @@ agents:
     categories: {}
 `;
 
+// evals/pricing.yaml (rule 25). JSON is valid YAML. Every shipped model is priced unless a test
+// narrows the list.
+const ALL_MODELS = [
+  ...new Set([
+    ORCHESTRATOR_CONFIG.model,
+    LEAVE_CONFIG.model,
+    POLICY_QA_CONFIG.model,
+    ONBOARDING_CONFIG.model,
+  ]),
+];
+const pricingFor = (models: readonly string[], over: Record<string, unknown> = {}): string =>
+  JSON.stringify({
+    version: 1,
+    asOf: '2026-10-22',
+    currency: 'USD',
+    models: Object.fromEntries(models.map((m) => [m, { inputPerMTok: 3, outputPerMTok: 15 }])),
+    ...over,
+  });
+const VALID_PRICING = pricingFor(ALL_MODELS);
+const sha256 = (text: string): string =>
+  createHash('sha256').update(Buffer.from(text)).digest('hex');
+
 const thresholdsWith = (leaveBlock: string, omit?: Agent): string => {
   const block = (name: Agent): string =>
     name === 'leave' ? `  leave:\n${leaveBlock}` : `  ${name}:\n    categories: {}\n`;
@@ -150,7 +176,11 @@ interface Setup {
   resultsDir: string;
 }
 
-function setup(files: Files = {}, thresholds: string | null = VALID_THRESHOLDS): Setup {
+function setup(
+  files: Files = {},
+  thresholds: string | null = VALID_THRESHOLDS,
+  pricing: string | null = VALID_PRICING,
+): Setup {
   const evalsDir = mkdtempSync(join(tmpdir(), 'evals-setup-'));
   const defaults: Record<Agent, string> = {
     orchestrator: line(skippedOrch()) + '\n',
@@ -165,6 +195,7 @@ function setup(files: Files = {}, thresholds: string | null = VALID_THRESHOLDS):
     writeFileSync(join(evalsDir, agent, 'cases.jsonl'), content);
   }
   if (thresholds !== null) writeFileSync(join(evalsDir, 'thresholds.yaml'), thresholds);
+  if (pricing !== null) writeFileSync(join(evalsDir, 'pricing.yaml'), pricing);
   const resultsDir = join(evalsDir, 'results');
   mkdirSync(resultsDir, { recursive: true });
   return { evalsDir, resultsDir };
@@ -243,7 +274,7 @@ function harness(
 }
 
 const resultOf = (outcome: EvalOutcome, agent: string, id: string) =>
-  outcome.run?.cases.find((c) => c.agent === agent && c.id === id);
+  outcome.runs.flatMap((r) => r.cases).find((c) => c.agent === agent && c.id === id);
 
 describe('eval runner setup (AT-2 to AT-8)', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
@@ -275,8 +306,8 @@ describe('eval runner setup (AT-2 to AT-8)', () => {
       const h = harness(s, model);
       const outcome = await runEvals(h.deps);
       expect(outcome.exitCode).toBe(2);
-      expect(outcome.run).toBeNull();
-      expect(outcome.resultsPath).toBeNull();
+      expect(outcome.runs).toEqual([]);
+      expect(outcome.resultsPaths).toEqual([]);
       expect(calls).toHaveLength(0);
       expect(resultFiles(s)).toHaveLength(0);
       expect(h.out()).toMatch(mustName);
@@ -356,7 +387,7 @@ describe('eval runner setup (AT-2 to AT-8)', () => {
       expect(['model_unavailable', 'run_failed']).toContain(result?.errorCode);
       expect(h.out()).not.toContain(CANARY);
       expect(allResultsText(s)).not.toContain(CANARY);
-      expect(JSON.stringify(outcome.run)).not.toContain(CANARY);
+      expect(JSON.stringify(outcome.runs)).not.toContain(CANARY);
     });
   });
 
@@ -401,12 +432,38 @@ describe('eval runner setup (AT-2 to AT-8)', () => {
       expect(resultFiles(s)).toHaveLength(0);
     });
 
-    it('AT-4: thresholdsHash equals the SHA-256 of the file bytes', async () => {
-      const { outcome } = await runWith(VALID_THRESHOLDS);
+    it('AT-4: thresholdsHash in every results file equals the SHA-256 of the file bytes', async () => {
+      const { outcome, s } = await runWith(VALID_THRESHOLDS);
       expect([0, 1]).toContain(outcome.exitCode);
-      expect(outcome.run?.thresholdsHash).toBe(
-        createHash('sha256').update(Buffer.from(VALID_THRESHOLDS)).digest('hex'),
+      const files = resultFiles(s);
+      expect(files).toHaveLength(4);
+      expect(outcome.runs).toHaveLength(4);
+      for (const f of files) {
+        const parsed = JSON.parse(readFileSync(join(s.resultsDir, f), 'utf8')) as {
+          thresholdsHash?: unknown;
+        };
+        expect(parsed.thresholdsHash, f).toBe(sha256(VALID_THRESHOLDS));
+      }
+      for (const r of outcome.runs) expect(r.thresholdsHash).toBe(sha256(VALID_THRESHOLDS));
+    });
+
+    it('AT-4: an escalation block under orchestrator fails the schema and exits 2', async () => {
+      const yaml = VALID_THRESHOLDS.replace(
+        '  orchestrator:\n    categories: {}\n',
+        '  orchestrator:\n    categories: {}\n    escalation:\n      recall: 0.9\n',
       );
+      expect(yaml).not.toBe(VALID_THRESHOLDS);
+      const { outcome, calls, s } = await runWith(yaml);
+      expect(outcome.exitCode).toBe(2);
+      expect(calls).toHaveLength(0);
+      expect(resultFiles(s)).toHaveLength(0);
+    });
+
+    it('AT-4: an escalation block under leave parses', async () => {
+      const { outcome } = await runWith(
+        thresholdsWith('    categories: {}\n    escalation:\n      precision: 0.5\n'),
+      );
+      expect(outcome.exitCode).not.toBe(2);
     });
 
     it('AT-4: leave.tags { prohibited: 1 } parses', async () => {
@@ -414,7 +471,7 @@ describe('eval runner setup (AT-2 to AT-8)', () => {
         thresholdsWith('    categories: {}\n    tags:\n      prohibited: 1\n'),
       );
       expect(outcome.exitCode).not.toBe(2);
-      expect(outcome.run).not.toBeNull();
+      expect(outcome.runs.length).toBeGreaterThan(0);
     });
 
     it('AT-4: a tag key "Bad Tag" exits 2', async () => {
@@ -539,6 +596,215 @@ describe('eval runner setup (AT-2 to AT-8)', () => {
     expect(types(second)).not.toContain('tool_call');
     expect(first?.firstId).not.toBeNull();
     expect(second?.firstId).toBe(first?.firstId);
+  });
+
+  // ---- AT-26 (rules 4, 23) ----
+  describe('AT-26: the orchestrator has no escalation', () => {
+    it('AT-26: the orchestrator summary has escalation null and stdout has no escalation row for it', async () => {
+      const s = setup();
+      const { model } = fakeModel();
+      const h = harness(s, model);
+      const outcome = await runEvals(h.deps);
+      const orch = outcome.runs.find((r) => r.agent === 'orchestrator');
+      expect(orch?.summary.escalation).toBeNull();
+      for (const agent of ['leave', 'policy_qa', 'onboarding'] as const) {
+        expect(outcome.runs.find((r) => r.agent === agent)?.summary.escalation).not.toBeNull();
+      }
+      const rows = h.out().split('\n');
+      expect(rows.some((l) => /escalation_(precision|recall)/.test(l))).toBe(true);
+      expect(
+        rows.filter((l) => l.includes('orchestrator') && l.includes('escalation')),
+        'orchestrator escalation rows',
+      ).toEqual([]);
+    });
+
+    it('AT-26: orchestrator.escalation { recall: 0.9 } exits 2 with zero model calls and no results file', async () => {
+      const yaml = VALID_THRESHOLDS.replace(
+        '  orchestrator:\n    categories: {}\n',
+        '  orchestrator:\n    categories: {}\n    escalation:\n      recall: 0.9\n',
+      );
+      expect(yaml).not.toBe(VALID_THRESHOLDS);
+      const s = setup({}, yaml);
+      const { model, calls } = fakeModel();
+      const outcome = await runEvals(harness(s, model).deps);
+      expect(outcome.exitCode).toBe(2);
+      expect(calls).toHaveLength(0);
+      expect(resultFiles(s)).toHaveLength(0);
+    });
+  });
+
+  // ---- AT-29 (rule 25; D-20, D-21) ----
+  describe('AT-29: pricing file', () => {
+    async function expectPricingError(
+      pricing: string | null,
+      agent?: 'orchestrator' | 'leave' | 'policy_qa' | 'onboarding',
+      files: Files = {},
+    ): Promise<string> {
+      const s = setup(files, VALID_THRESHOLDS, pricing);
+      const { model, calls } = fakeModel();
+      const h = harness(s, model);
+      const outcome = await runEvals(h.deps, agent);
+      expect(outcome.exitCode).toBe(2);
+      expect(outcome.runs).toEqual([]);
+      expect(calls).toHaveLength(0);
+      expect(resultFiles(s)).toHaveLength(0);
+      return h.out();
+    }
+
+    it('AT-29: no pricing.yaml exits 2 with zero model calls and no results file, naming the file', async () => {
+      expect(await expectPricingError(null)).toContain('pricing.yaml');
+    });
+
+    it('AT-29: a pricing file that is not valid YAML exits 2', async () => {
+      await expectPricingError('version: 1\nmodels: [unclosed\n');
+    });
+
+    it('AT-29: inputPerMTok of -1 exits 2', async () => {
+      const bad = JSON.stringify({
+        version: 1,
+        asOf: '2026-10-22',
+        currency: 'USD',
+        models: Object.fromEntries(
+          ALL_MODELS.map((m) => [m, { inputPerMTok: -1, outputPerMTok: 15 }]),
+        ),
+      });
+      await expectPricingError(bad);
+    });
+
+    it('AT-29: currency EUR, a missing asOf and an extra key each exit 2', async () => {
+      await expectPricingError(pricingFor(ALL_MODELS, { currency: 'EUR' }));
+      await expectPricingError(pricingFor(ALL_MODELS, { asOf: undefined }));
+      await expectPricingError(pricingFor(ALL_MODELS, { discount: 0.1 }));
+    });
+
+    it('AT-29: a price of 0 is allowed', async () => {
+      const zero = JSON.stringify({
+        version: 1,
+        asOf: '2026-10-22',
+        currency: 'USD',
+        models: Object.fromEntries(
+          ALL_MODELS.map((m) => [m, { inputPerMTok: 0, outputPerMTok: 0 }]),
+        ),
+      });
+      const s = setup({}, VALID_THRESHOLDS, zero);
+      const { model } = fakeModel();
+      const outcome = await runEvals(harness(s, model).deps);
+      expect(outcome.exitCode).not.toBe(2);
+    });
+
+    it('AT-29: no entry for LEAVE_CONFIG.model exits 2 for a full run and for -- leave, naming file, agent and model', async () => {
+      const onlyOrchestrator = pricingFor([ORCHESTRATOR_CONFIG.model]);
+      for (const agent of [undefined, 'leave'] as const) {
+        const out = await expectPricingError(onlyOrchestrator, agent);
+        expect(out).toContain('pricing.yaml');
+        expect(out).toContain('leave');
+        expect(out).toContain(LEAVE_CONFIG.model);
+      }
+    });
+
+    it('AT-29: -- orchestrator runs with only ORCHESTRATOR_CONFIG.model priced', async () => {
+      const s = setup({}, VALID_THRESHOLDS, pricingFor([ORCHESTRATOR_CONFIG.model]));
+      const { model } = fakeModel();
+      const outcome = await runEvals(harness(s, model).deps, 'orchestrator');
+      expect(outcome.exitCode).toBe(0);
+      expect(outcome.runs.map((r) => r.agent)).toEqual(['orchestrator']);
+      expect(resultFiles(s)).toHaveLength(1);
+    });
+
+    it('AT-29: -- policy_qa with only POLICY_QA_CONFIG.model priced exits 2 because the orchestrator model is also required', async () => {
+      const out = await expectPricingError(pricingFor([POLICY_QA_CONFIG.model]), 'policy_qa');
+      expect(out).toContain('pricing.yaml');
+      expect(out).toContain(ORCHESTRATOR_CONFIG.model);
+    });
+
+    it('AT-29: extra entries for models that are not shipped are ignored', async () => {
+      const s = setup({}, VALID_THRESHOLDS, pricingFor([...ALL_MODELS, 'claude-unshipped-0']));
+      const { model } = fakeModel();
+      const outcome = await runEvals(harness(s, model).deps);
+      expect(outcome.exitCode).not.toBe(2);
+    });
+
+    it('AT-29: pricingHash in every results file equals the SHA-256 of the pricing bytes', async () => {
+      const s = setup();
+      const { model } = fakeModel();
+      const outcome = await runEvals(harness(s, model).deps);
+      expect([0, 1]).toContain(outcome.exitCode);
+      const files = resultFiles(s);
+      expect(files).toHaveLength(4);
+      for (const f of files) {
+        const parsed = JSON.parse(readFileSync(join(s.resultsDir, f), 'utf8')) as {
+          pricingHash?: unknown;
+        };
+        expect(parsed.pricingHash, f).toBe(sha256(VALID_PRICING));
+      }
+    });
+
+    it('AT-29: setup order is key, thresholds, pricing, then case files', async () => {
+      // A malformed orchestrator file must not be reported when pricing is already missing.
+      const out = await expectPricingError(null, undefined, {
+        orchestrator: 'LINE-CANARY-BAD {not json\n',
+      });
+      expect(out).toContain('pricing.yaml');
+      expect(out).not.toContain('cases.jsonl');
+
+      // A missing key is reported before a missing pricing file.
+      const s = setup({}, VALID_THRESHOLDS, null);
+      const { model } = fakeModel();
+      const h = harness(s, model, {});
+      const outcome = await runEvals(h.deps);
+      expect(outcome.exitCode).toBe(2);
+      expect(h.out()).toContain('ANTHROPIC_API_KEY');
+      expect(h.out()).not.toContain('pricing.yaml');
+
+      // Missing thresholds are reported before a missing pricing file.
+      const s2 = setup({}, null, null);
+      const h2 = harness(s2, fakeModel().model);
+      await runEvals(h2.deps);
+      expect(h2.out()).toContain('thresholds.yaml');
+      expect(h2.out()).not.toContain('pricing.yaml');
+    });
+  });
+
+  // ---- AT-30 (rules 1, 2, 25; D-17) ----
+  describe('AT-30: agent filter isolation', () => {
+    it('AT-30: -- policy_qa succeeds with the other case files absent or malformed, and writes one policy_qa file', async () => {
+      const s = setup(
+        {
+          orchestrator: 'LINE-CANARY-BAD {not json\n',
+          leave: null,
+          onboarding: '',
+          policy_qa: line(skippedQa('EV-1')) + '\n',
+        },
+        VALID_THRESHOLDS,
+        pricingFor([POLICY_QA_CONFIG.model, ORCHESTRATOR_CONFIG.model]),
+      );
+      const { model, calls } = fakeModel();
+      const h = harness(s, model);
+      const outcome = await runEvals(h.deps, 'policy_qa');
+      expect(outcome.exitCode).toBe(0);
+      expect(calls).toHaveLength(0);
+      expect(outcome.runs).toHaveLength(1);
+      expect(outcome.runs[0]?.agent).toBe('policy_qa');
+      expect(resultFiles(s)).toEqual([
+        `2026-10-22-policy_qa-${POLICY_QA_CONFIG.promptVersion}.json`,
+      ]);
+      expect(h.out()).not.toContain('LINE-CANARY-BAD');
+      expect(h.out()).not.toContain('cases.jsonl');
+    });
+
+    it('AT-30: -- leave never opens another agent case file', async () => {
+      const s = setup({ leave: line(skippedLeave('EV-1')) + '\n' });
+      // Replace the other case files with directories: opening one as a file would throw.
+      for (const agent of ['orchestrator', 'policy_qa', 'onboarding'] as const) {
+        rmSync(join(s.evalsDir, agent, 'cases.jsonl'));
+        mkdirSync(join(s.evalsDir, agent, 'cases.jsonl'));
+      }
+      const { model } = fakeModel();
+      const outcome = await runEvals(harness(s, model).deps, 'leave');
+      expect(outcome.exitCode).toBe(0);
+      expect(outcome.runs.map((r) => r.agent)).toEqual(['leave']);
+      expect(outcome.runs[0]?.cases.every((c) => c.agent === 'leave')).toBe(true);
+    });
   });
 
   // ---- AT-8 (rule 8) ----

@@ -4,6 +4,10 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { LEAVE_CONFIG } from '../agents/leave/config.js';
+import { ONBOARDING_CONFIG } from '../agents/onboarding/config.js';
+import { ORCHESTRATOR_CONFIG } from '../agents/orchestrator/config.js';
+import { POLICY_QA_CONFIG } from '../agents/policy_qa/config.js';
 import type { Clock, ModelClient } from '../agents/runtime.js';
 import { runEvals, type EvalDeps, type EvalOutcome } from './run.js';
 
@@ -69,6 +73,23 @@ function fakeRealClock() {
 }
 
 const scheduler = { setTimeout: (): (() => void) => () => undefined };
+
+// evals/pricing.yaml (rule 25): JSON is valid YAML. Every shipped model is priced.
+const PRICING_YAML = JSON.stringify({
+  version: 1,
+  asOf: '2026-10-22',
+  currency: 'USD',
+  models: Object.fromEntries(
+    [
+      ...new Set([
+        ORCHESTRATOR_CONFIG.model,
+        LEAVE_CONFIG.model,
+        POLICY_QA_CONFIG.model,
+        ONBOARDING_CONFIG.model,
+      ]),
+    ].map((m) => [m, { inputPerMTok: 3, outputPerMTok: 15 }]),
+  ),
+});
 
 const SCORED_LEAVE = {
   actor: { employeeId: 'emp-004', role: 'employee' },
@@ -185,6 +206,7 @@ async function run(
   yaml = thresholdsYaml(),
 ): Promise<{ outcome: EvalOutcome; ends: CaseEnd[] }> {
   writeFileSync(join(dir, 'thresholds.yaml'), yaml);
+  writeFileSync(join(dir, 'pricing.yaml'), PRICING_YAML); // rule 25
   const ends: CaseEnd[] = [];
   const outcome = await runEvals({
     env: { ANTHROPIC_API_KEY: 'TEST-key-0001' },
@@ -202,13 +224,13 @@ async function run(
 }
 
 function caseOf(outcome: EvalOutcome, agent: string, id: string) {
-  const c = outcome.run?.cases.find((x) => x.agent === agent && x.id === id);
+  const c = outcome.runs.flatMap((r) => r.cases).find((x) => x.agent === agent && x.id === id);
   if (c === undefined) throw new Error(`no result for ${agent}/${id}`);
   return c;
 }
 
 function agentOf(outcome: EvalOutcome, agent: string) {
-  const a = outcome.run?.agents.find((x) => x.agent === agent);
+  const a = outcome.runs.find((x) => x.agent === agent)?.summary;
   if (a === undefined) throw new Error(`no summary for ${agent}`);
   return a;
 }
@@ -302,9 +324,10 @@ describe('eval runner: execution rules 9 to 15', () => {
     expect(model.calls).toBe(1);
     expect(JSON.stringify(model.requests)).not.toContain('NOTES-CANARY');
     expect([...stdout, ...stderr].join('\n')).not.toContain('NOTES-CANARY');
-    expect(outcome.resultsPath).not.toBeNull();
-    const file = readFileSync(outcome.resultsPath ?? '', 'utf8');
-    expect(file).not.toContain('NOTES-CANARY');
+    expect(outcome.resultsPaths).toHaveLength(4);
+    for (const path of outcome.resultsPaths) {
+      expect(readFileSync(path, 'utf8'), path).not.toContain('NOTES-CANARY');
+    }
   });
 
   it('AT-10: text aimed at the runner is scored like any case and changes nothing', async () => {
@@ -330,9 +353,13 @@ describe('eval runner: execution rules 9 to 15', () => {
 
     expect(caseOf(outcome, 'orchestrator', 'orch-001').status).toBe('failed');
     expect(agentOf(outcome, 'orchestrator').overall.threshold).toBe(0.9);
-    expect(outcome.run?.thresholdsMet).toBe(false);
+    expect(outcome.runs.find((r) => r.agent === 'orchestrator')?.thresholdsMet).toBe(false);
     expect(outcome.exitCode).toBe(1);
-    expect(readdirSync(join(dir, 'results'))).toHaveLength(1);
+    // only the files this run wrote: one per agent that ran
+    expect(readdirSync(join(dir, 'results')).sort()).toEqual(
+      outcome.resultsPaths.map((p) => p.slice(join(dir, 'results').length + 1)).sort(),
+    );
+    expect(readdirSync(join(dir, 'results'))).toHaveLength(4);
   });
 
   it('AT-11: a blocked: tag skips the case with no model call and no denominator entry', async () => {

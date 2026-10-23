@@ -1,5 +1,6 @@
 // Entry point for `npm run evals` (spec eval-runner, rule 1). `.env` is loaded by Node's
-// --env-file-if-exists flag. Takes no arguments; importing this module never starts a run.
+// --env-file-if-exists flag. Takes one optional agent name (D-17); importing this module never
+// starts a run.
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -7,13 +8,18 @@ import { createAnthropicClient } from '../agents/anthropic-client.js';
 import type { ModelClient } from '../agents/schemas.js';
 import { systemClock, timerScheduler } from '../server/runtime.js';
 import { runEvals, type EvalDeps } from './run.js';
+import { EVAL_AGENTS, EvalArgs } from './schemas.js';
 
 export async function main(args: readonly string[], deps: EvalDeps): Promise<number> {
-  if (args.length > 0) {
-    deps.stderr('evals: `npm run evals` takes no arguments.');
+  // Parsed before the key check; the argument is never echoed (rule 1).
+  const parsed = EvalArgs.safeParse(args);
+  if (!parsed.success) {
+    deps.stderr(
+      `evals: usage: npm run evals [-- <agent>], where <agent> is one of ${EVAL_AGENTS.join(', ')}.`,
+    );
     return 2;
   }
-  return (await runEvals(deps)).exitCode;
+  return (await runEvals(deps, parsed.data[0])).exitCode;
 }
 
 function gitCommit(cwd: string): string | null {

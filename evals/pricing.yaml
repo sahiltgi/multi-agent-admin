@@ -1,0 +1,11 @@
+# Model prices for eval cost reporting (spec eval-runner, rules 24, 25; D-20, D-21, D-25). Read by
+# `npm run evals`. USD per million tokens, Anthropic first-party API rates. Cost is reported only,
+# never enforced. Whoever changes a shipped model updates this file in the same change (D-25).
+# claude-haiku-5-5 is $0.10/$0.50 for prompts up to 100K tokens ($0.50/$2.50 above); orchestrator
+# prompts stay far below that, so the lower tier is used.
+version: 1
+asOf: '2026-10-06'
+currency: USD
+models:
+  claude-sonnet-5-5: { inputPerMTok: 2, outputPerMTok: 10 } # leave, policy_qa, onboarding
+  claude-haiku-5-5: { inputPerMTok: 0.1, outputPerMTok: 0.5 } # orchestrator

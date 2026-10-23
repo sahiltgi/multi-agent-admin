@@ -1,5 +1,6 @@
-// Reads the four case files and thresholds.yaml (spec eval-runner, rules 2, 4). Every failure is a
-// SetupError whose message names only the file and line number, never line text or Zod issues.
+// Reads the case files, thresholds.yaml and pricing.yaml (spec eval-runner, rules 2, 4, 25). Every
+// failure is a SetupError whose message names only the file and line number (or, for pricing, the
+// agent and model id), never line text, prices or Zod issues.
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -9,7 +10,7 @@ import { OnboardingEvalCase } from '../agents/onboarding/schemas.js';
 import { OrchestratorEvalCase } from '../agents/orchestrator/schemas.js';
 import { QaEvalCase } from '../agents/policy_qa/schemas.js';
 import type { Role } from '../domain/schemas.js';
-import { CASE_SOURCES, Thresholds, type EvalAgent, type EvalCategory } from './schemas.js';
+import { CASE_SOURCES, Pricing, Thresholds, type EvalAgent, type EvalCategory } from './schemas.js';
 
 /** A setup failure: the run exits 2 and writes no results. The message is safe to print. */
 export class SetupError extends Error {
@@ -65,6 +66,40 @@ export function readThresholds(evalsDir: string): LoadedThresholds {
     throw new SetupError('evals/thresholds.yaml does not match the thresholds schema.');
   }
   return { thresholds: parsed.data, hash: createHash('sha256').update(bytes).digest('hex') };
+}
+
+export interface LoadedPricing {
+  pricing: Pricing;
+  hash: string; // SHA-256 of the file bytes
+}
+
+/** `required` maps each model a run can call to an agent that needs it (rule 25; D-21). */
+export function readPricing(
+  evalsDir: string,
+  required: ReadonlyMap<string, EvalAgent>,
+): LoadedPricing {
+  let bytes: Buffer;
+  try {
+    bytes = readFileSync(join(evalsDir, 'pricing.yaml'));
+  } catch {
+    throw new SetupError('evals/pricing.yaml is missing.');
+  }
+  let raw: unknown;
+  try {
+    raw = parseYaml(bytes.toString('utf8'));
+  } catch {
+    throw new SetupError('evals/pricing.yaml is not valid YAML.');
+  }
+  const parsed = Pricing.safeParse(raw);
+  if (!parsed.success) {
+    throw new SetupError('evals/pricing.yaml does not match the pricing schema.');
+  }
+  for (const [model, agent] of required) {
+    if (!Object.hasOwn(parsed.data.models, model)) {
+      throw new SetupError(`evals/pricing.yaml has no entry for model ${model} (agent ${agent}).`);
+    }
+  }
+  return { pricing: parsed.data, hash: createHash('sha256').update(bytes).digest('hex') };
 }
 
 function rawKeys(raw: unknown): string[] {
@@ -136,10 +171,11 @@ function parseCase(agent: EvalAgent, raw: unknown): LoadedCase | null {
   }
 }
 
-/** Every case of the four files, in CASE_SOURCES order then file order. */
-export function readCases(evalsDir: string): LoadedCase[] {
+/** Every case of the given agents' files, in CASE_SOURCES order then file order (D-17). */
+export function readCases(evalsDir: string, agents: readonly EvalAgent[]): LoadedCase[] {
   const out: LoadedCase[] = [];
   for (const source of CASE_SOURCES) {
+    if (!agents.includes(source.agent)) continue; // other agents' files are never opened
     const name = `evals/${source.file}`;
     let text: string;
     try {
