@@ -7,6 +7,7 @@ on:
     branches: [master]
     paths:
       - 'prompts/**'
+      - '!prompts/ci/**' # CI-only prompts (ai-review) don't affect the HR agents
       - 'server/src/agents/**'
       - 'server/src/gate/**'
       - 'policies/**'
