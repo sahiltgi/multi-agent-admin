@@ -1,5 +1,6 @@
 # Agent evals (brief §9: "run in CI on relevant changes and nightly"). Documented in docs/ci-agents.md.
-# ANTHROPIC_API_KEY lives in the `evals` GitHub Environment and reaches only the `npm run evals -- <agent>` steps.
+# Its key is the repository secret ANTHROPIC_API_KEY_EVALS (GitHub Free, private repo: no Environments),
+# passed as ANTHROPIC_API_KEY to the `npm run evals -- <agent>` steps only.
 name: evals
 
 on:
@@ -31,7 +32,6 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 75 # worst case: 40 x 30 s + 40 x 60 s case budgets = 60 min, plus npm ci
-    environment: evals
     permissions:
       contents: read
     steps:
@@ -57,7 +57,7 @@ jobs:
         timeout-minutes: 25 # 40 cases x 30 s budget = 20 min
         run: npm run evals -- orchestrator
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY_EVALS }}
 
       - name: npm run evals -- leave
         # Also after an orchestrator threshold miss, but not when npm ci failed.
@@ -65,7 +65,7 @@ jobs:
         timeout-minutes: 45 # 40 cases x 60 s budget = 40 min
         run: npm run evals -- leave
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY_EVALS }}
 
       # Also on a threshold miss (exit 1): the results file is the evidence.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

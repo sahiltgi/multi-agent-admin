@@ -1,5 +1,6 @@
-# Verify, secret scan, dependency review and CodeQL on every PR and push to master
-# (docs/ai-policy.md, "Git hooks and CI"). No model and no secrets: not a headless agent run.
+# Verify (with npm audit) and secret scan on every PR and push to master (docs/ai-policy.md,
+# "Git hooks and CI"). No model and no secrets: not a headless agent run. Dependency review and
+# CodeQL need GitHub Code Security, which a private repo on a personal Free account can't have.
 name: ci
 
 on:
@@ -31,6 +32,7 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - run: npm audit --audit-level=high # known-vulnerable packages, high or critical
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run format:check
@@ -62,34 +64,3 @@ jobs:
 
       - name: gitleaks (full history)
         run: '"$RUNNER_TEMP/gitleaks" git --redact --exit-code 1 --no-banner .'
-
-  dependency-review:
-    name: dependency-review
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
-
-  codeql:
-    name: CodeQL
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      security-events: write # upload results to code scanning
-      actions: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
-        with:
-          languages: javascript-typescript
-
-      - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3

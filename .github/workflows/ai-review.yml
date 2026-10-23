@@ -1,6 +1,6 @@
 # Read-only AI review of same-repo PRs. It may comment; it can never push, approve or request
-# changes. Documented in docs/ci-agents.md. Its key lives in the `ai-review` GitHub Environment,
-# separate from the evals key.
+# changes. Documented in docs/ci-agents.md. Its key is the repository secret
+# ANTHROPIC_API_KEY_REVIEW, a different key from the evals one.
 name: ai-review
 
 on:
@@ -24,7 +24,6 @@ jobs:
       github.event.pull_request.user.type != 'Bot'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment: ai-review
     env:
       # Strip the Anthropic key and other secrets from the env of Bash subprocesses (gh), so an
       # injected `gh pr comment --body-file /proc/self/environ` can't post them. The action only
@@ -52,7 +51,7 @@ jobs:
 
       - uses: anthropics/claude-code-action@2dca132ff0e0c4094ce6048b422c6915a071210b # v1.0.247
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY_REVIEW }}
           # The job's GITHUB_TOKEN, so the action never swaps in a Claude GitHub App token
           # (no id-token: write is granted, so it can't).
           github_token: ${{ secrets.GITHUB_TOKEN }}
