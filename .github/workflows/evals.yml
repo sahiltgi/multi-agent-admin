@@ -1,0 +1,76 @@
+# Agent evals (brief §9: "run in CI on relevant changes and nightly"). Documented in docs/ci-agents.md.
+# ANTHROPIC_API_KEY lives in the `evals` GitHub Environment and reaches only the `npm run evals -- <agent>` steps.
+name: evals
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'prompts/**'
+      - 'server/src/agents/**'
+      - 'server/src/gate/**'
+      - 'policies/**'
+      - 'evals/**'
+      - 'server/src/evals/**'
+      - '.github/workflows/evals.yml'
+  schedule:
+    - cron: '17 3 * * *' # nightly, 03:17 UTC; runs from the default branch only
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: evals-${{ github.ref }}
+  cancel-in-progress: true # each run spends API credit
+
+jobs:
+  evals:
+    name: evals
+    # Fork PRs never get the key: skip them rather than fail on a missing secret.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 75 # worst case: 40 x 30 s + 40 x 60 s case budgets = 60 min, plus npm ci
+    environment: evals
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - id: install
+        run: npm ci
+
+      # Exit 0 = the agent met evals/thresholds.yaml, 1 = it missed, 2 = setup error.
+      # Only orchestrator and leave run: every policy_qa and onboarding case is tagged
+      # blocked:no-runner, so those agents score nothing and fail closed. Add a step for each
+      # (or go back to a single `npm run evals`) once their cases can run.
+      # Step timeouts turn a hung model API into a step failure, not a job cancel, so the
+      # results files that were written still get uploaded.
+      - name: npm run evals -- orchestrator
+        timeout-minutes: 25 # 40 cases x 30 s budget = 20 min
+        run: npm run evals -- orchestrator
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: npm run evals -- leave
+        # Also after an orchestrator threshold miss, but not when npm ci failed.
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        timeout-minutes: 45 # 40 cases x 60 s budget = 40 min
+        run: npm run evals -- leave
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      # Also on a threshold miss (exit 1): the results file is the evidence.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: evals-results-${{ github.run_id }}
+          path: evals/results/*.json
+          if-no-files-found: warn
+          retention-days: 30
