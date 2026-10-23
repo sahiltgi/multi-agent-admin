@@ -28,6 +28,8 @@ function mk(
     errorCode: status === 'error' ? 'run_failed' : null,
     checks: [],
     latencyMs: null,
+    tokens: { input: 0, output: 0 }, // rule 24 (v2)
+    costUsd: 0,
   });
 }
 const many = (n: number, status: Status, over: Parameters<typeof mk>[1] = {}): CaseResult[] =>

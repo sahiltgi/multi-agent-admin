@@ -103,8 +103,8 @@ Planned in brief §9. Most parts don't exist yet; the notes say which do. Create
 - `server/src/persistence/mongo/`: MongoDB adapters for every port (directory, approvals, leave requests and message owners, append-only audit, idempotency, leave data), the two storage-only models and `connectMongo` (spec mongo-persistence). Outside `server/src/http/`.
 - `server/src/server/`: process wiring: `startServer` (policy, env, production refusal, prompt files, model client, MongoDB, app, listen on `127.0.0.1`, graceful shutdown), `buildApp`, `listenHttp`, the system clock and `uuidIdGen` (spec mongo-persistence). `server/src/index.ts` only passes the production deps.
 - `server/src/policies/`: the boot-time policy loader (read, SHA-256, YAML parse, validate). It does I/O, so it sits outside the gate.
-- `server/src/evals/`: the eval runner behind `npm run evals` (spec eval-runner). Runs each case on a fresh in-memory world seeded from the fixtures, through the production agents and `buildApp` called in-process, scores in code (`score/`, never a model), and writes `evals/results/<date>.json`. Imports nothing from `server/src/gate/`.
+- `server/src/evals/`: the eval runner behind `npm run evals` (spec eval-runner). Runs each case on a fresh in-memory world seeded from the fixtures, through the production agents and `buildApp` called in-process, scores in code (`score/`, never a model), prices each case's model calls from `evals/pricing.yaml`, and writes one `evals/results/<date>-<agent>-<promptVersion>.json` per agent. Imports nothing from `server/src/gate/`.
 - `prompts/`: versioned agent prompts.
-- `evals/`: labeled eval cases, `thresholds.yaml` and the committed `results/` of each run.
+- `evals/`: labeled eval cases, `thresholds.yaml`, `pricing.yaml` and the committed `results/` of each run.
 - `shared/`: Zod schemas used by both server and web. Until web needs them, the domain schemas live in `server/src/domain/` (spec domain-schemas D-1).
 - `web/src/`: employee chat, approval queue, audit and evals views.
