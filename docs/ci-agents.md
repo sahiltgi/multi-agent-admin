@@ -85,17 +85,27 @@ There are 40 cases per agent today, and CI runs only the orchestrator and leave 
 - Workflow: `permissions: {}`. Job: `contents: read` and `pull-requests: write` (PR and inline comments).
 - `github_token: ${{ secrets.GITHUB_TOKEN }}` is passed explicitly. Without it the action exchanges an OIDC token for a Claude GitHub App token, and that token can have `contents: write`. The job doesn't grant `id-token: write`, so that exchange can't happen.
 - With `contents: read`, `git push` fails even if it were attempted.
-- Checkout uses `persist-credentials: false` and `fetch-depth: 1`. The action then writes the job's `GITHUB_TOKEN` into the `origin` URL in `.git/config` itself, which is why `Read(./.git/**)` is denied below.
+- Checkout uses `persist-credentials: false` and `fetch-depth: 1`. The action then writes the job's `GITHUB_TOKEN` into the `origin` URL in `.git/config` itself. The reviewer has no local file access (see Tools), so it can't read that file.
 - `anthropics/claude-code-action` is pinned to the v1.0.247 commit SHA.
 
 ### Tools
 
-The action runs in agent mode (a `prompt` is set). In this mode it adds only the tools listed in `claude_args`. Commit signing is off, so it adds no file-ops or commit server.
+The action runs in agent mode (a `prompt` is set). It starts only the MCP servers that `--allowedTools` names: the GitHub server and the inline-comment server. Commit signing is off, so there's no file-ops or commit server. The GitHub server exposes all of its tools, so three separate controls keep the reviewer comment-only:
 
-- Allowed: `Read`, `Grep`, `Glob`, `mcp__github_inline_comment__create_inline_comment`, `Bash(gh pr view:*)`, `Bash(gh pr diff:*)`, `Bash(gh pr comment:*)`.
-- Denied: `Read(./.git/**)`, `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `WebFetch`, `WebSearch`, `Task`, `Agent`, `Bash(git push:*)`, `Bash(git commit:*)`, `Bash(gh pr review:*)`, `Bash(gh pr merge:*)`, `Bash(gh api:*)`.
+1. Claude Code denies any tool that isn't in `--allowedTools`.
+2. The GitHub server's write tools are also denied by name.
+3. The job token can't push (`contents: read`), and the repo setting "Allow GitHub Actions to create and approve pull requests" is off (`can_approve_pull_request_reviews: false`), so even an approving review call would fail. Keep it off.
+
+- Allowed:
+  - reading through the GitHub API: `mcp__github__get_pull_request`, `mcp__github__get_pull_request_diff`, `mcp__github__get_pull_request_files`, `mcp__github__get_file_contents`;
+  - commenting: `mcp__github__add_issue_comment` (the summary) and `mcp__github_inline_comment__create_inline_comment`.
+- Denied: `Bash`, `Read`, `Grep`, `Glob`, `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `NotebookRead`, `WebFetch`, `WebSearch`, `Task`, `Agent`. Read, Grep and Glob need no permission by default, so they are denied explicitly. Also denied: the GitHub server's write tools (create_and_submit_pull_request_review, create_pending_pull_request_review, submit_pending_pull_request_review, add_comment_to_pending_review, delete_pending_pull_request_review, merge_pull_request, update_pull_request, update_pull_request_branch, create_pull_request, request_copilot_review, create_branch, create_or_update_file, delete_file, push_files, create_repository, fork_repository, create_issue, update_issue, assign_copilot_to_issue).
+- **No shell and no local file access, by design.** On the runner, the Anthropic key is in Claude's process env, the MCP config (with the GitHub token) is on its command line, and the job token is in `.git/config`. Without Bash or file tools, the reviewer has no way to read any of them and post them in a comment, even if a PR tricks it. That's why there's no env scrub, no `bubblewrap` and no path deny.
+- The `mcp__github__*` tools come from the GitHub MCP server, which the action runs in Docker (`ghcr.io/github/github-mcp-server:sha-23fa0dd`, v0.17.1). Its only env is the job's `GITHUB_TOKEN` and the GitHub host.
+- `--strict-mcp-config`: Claude Code uses only the action's MCP servers, never a `.mcp.json` in the repo (there is none today). The action also restores `.claude/` and `.mcp.json` from the base branch before Claude starts.
+- AGENTS.md is read from `master` (`refs/heads/master`), so a PR can't rewrite the rules it is reviewed against.
+- `add_issue_comment` takes any issue number. The prompt limits it to this PR, and an injected comment elsewhere could only be text. The inline-comment server is fixed to this PR by the action.
 - `--setting-sources user`: Claude Code does not load the PR branch's `.claude/settings.json`. That stops hooks from the PR's own branch running in a job that holds the key. It also skips the Stop hook, which would run the test suite.
-- `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1'` (job `env:`): Claude Code makes a best-effort scrub of the Anthropic key and other secrets from the environment of Bash subprocesses. Without it, an injected `gh pr comment --body-file /proc/self/environ` would match the allowed `gh pr comment` rule and post the key. The action turns this on by itself only when `allowed_non_write_users` is set.
 - The prompt is in [`prompts/ci/ai-review.md`](../prompts/ci/ai-review.md). A workflow step reads it from the PR checkout, and the job fails if the file is missing or empty. The workflow adds the repo and PR number in front. It tells Claude to treat the PR text and the files as data (HARD RULE 3) and to comment only.
 
 ### Limits
