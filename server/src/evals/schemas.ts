@@ -7,6 +7,7 @@ import { OnboardingEvalCase } from '../agents/onboarding/schemas.js';
 import { OrchestratorEvalCase } from '../agents/orchestrator/schemas.js';
 import { QaEvalCase } from '../agents/policy_qa/schemas.js';
 import { IsoDate, IsoDateTime } from '../domain/schemas.js';
+import { Pricing, TokenCount } from '../lib/cost.js';
 
 // ---- what the runner reads ----
 export const EvalAgent = z.enum(['orchestrator', 'leave', 'policy_qa', 'onboarding']);
@@ -61,22 +62,8 @@ export const Thresholds = z
   .strict();
 export type Thresholds = z.infer<typeof Thresholds>;
 
-// evals/pricing.yaml (rule 25; D-20). Prices are config, not secrets.
-const ModelPrice = z
-  .object({
-    inputPerMTok: z.number().min(0), // USD per million input tokens
-    outputPerMTok: z.number().min(0), // USD per million output tokens
-  })
-  .strict();
-export const Pricing = z
-  .object({
-    version: z.literal(1),
-    asOf: IsoDate, // the date the prices were checked
-    currency: z.literal('USD'),
-    models: z.record(z.string().min(1), ModelPrice), // keyed by model id
-  })
-  .strict();
-export type Pricing = z.infer<typeof Pricing>;
+// evals/pricing.yaml (rule 25; D-20): moved to ../lib/cost.ts (spec agent-metrics, rule 2).
+export { Pricing };
 
 // ---- what the runner writes: evals/results/<YYYY-MM-DD>-<agent>-<promptVersion>.json (D-18) ----
 export const CaseStatus = z.enum(['passed', 'failed', 'error', 'skipped', 'unscorable']);
@@ -115,14 +102,8 @@ export const Check = z
   .strict();
 export type Check = z.infer<typeof Check>;
 
-// Rule 24; D-20
-export const TokenCount = z
-  .object({
-    input: z.number().int().nonnegative(),
-    output: z.number().int().nonnegative(),
-  })
-  .strict();
-export type TokenCount = z.infer<typeof TokenCount>;
+// Rule 24; D-20: moved to ../lib/cost.ts (spec agent-metrics, rule 2).
+export { TokenCount };
 
 export const CaseResult = z
   .object({

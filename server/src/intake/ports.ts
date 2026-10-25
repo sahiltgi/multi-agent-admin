@@ -13,7 +13,8 @@ import type { QaTextLoader } from '../agents/policy_qa/texts.js';
 import type { OnboardingStore } from '../domain/onboarding.js';
 import type { PolicyQuestionStore } from '../domain/qa.js';
 import type { ApprovalItem, LeaveRequest } from '../domain/schemas.js';
-import type { ApprovalStore, EmployeeDirectory } from '../http/approvals/ports.js';
+import type { ApprovalStore, AuditReader, EmployeeDirectory } from '../http/approvals/ports.js';
+import type { Pricing } from '../lib/cost.js';
 
 // Defined in domain/qa.ts so the approval-queue resolver can use it without importing intake
 // (spec policy-qa DD-23).
@@ -88,4 +89,7 @@ export interface IntakeDeps {
   runOnboarding: (input: OnboardingInput) => Promise<unknown>; // parsed by dispatch, never trusted
   onboarding: OnboardingStore;
   onboardingTexts: OnboardingTextLoader;
+  /** Reads a request's own model-call events back for its `usage` (spec agent-metrics, rule 7). */
+  auditReader: AuditReader;
+  pricing: Pricing; // the boot-time evals/pricing.yaml
 }

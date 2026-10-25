@@ -169,6 +169,7 @@ describe('buildApp with chat', () => {
         'GET /onboarding',
         'GET /onboarding/:checklistId',
         'PATCH /onboarding/:checklistId/tasks/:taskId',
+        'GET /metrics/agents', // spec agent-metrics, rule 12
       ].sort(),
     );
   });

@@ -28,6 +28,9 @@ import {
 import type { IntakeDeps } from './ports.js';
 import { createIntakeRoutes } from './routes.js';
 import { IntakePayload, MessageResponse, MyRequestsResponse } from './schemas.js';
+import { Pricing, Usage } from '../lib/cost.js';
+
+const NO_PRICING = Pricing.parse({ version: 1, asOf: '2026-10-01', currency: 'USD', models: {} });
 
 // ---- Fixtures (synthetic) ----
 const POLICY_HASH = '0123456789abcdef'.repeat(4);
@@ -187,6 +190,8 @@ function makeWorld(opts: WorldOptions = {}) {
     approvals,
     approvalReader: approvals,
     audit: sink,
+    auditReader: new InMemoryAuditReader(sink),
+    pricing: NO_PRICING, // nothing priced, so usage is null (spec agent-metrics, rule 9)
     clock: { nowIso: () => NOW },
     idGen,
     classify,
@@ -659,5 +664,51 @@ describe('copying the gate', () => {
       expect(src, f).not.toMatch(/status\s*[:=]\s*['"](approved|rejected)['"]/);
       expect(src, f).not.toMatch(/action\s*:\s*['"](approve|reject)['"]/);
     }
+  });
+});
+
+describe('agent-metrics AT-7: every intake outcome carries a Usage', () => {
+  const qaFailed = (requestId: string) =>
+    ({
+      kind: 'failed',
+      requestId,
+      reason: 'stop_reason',
+      answerText: null,
+      provenance: { policyVersion: 'v1', policyHash: 'a'.repeat(64), handbookHash: 'b'.repeat(64) },
+      injectionSuspected: false,
+    }) as unknown as Awaited<ReturnType<IntakeDeps['runPolicyQa']>>;
+  const arrange: [string, (w: World) => void][] = [
+    ['reply', (w) => w.classify.mockResolvedValue(D('prohibited'))],
+    ['question', (w) => w.classify.mockResolvedValue(D('unclear'))],
+    [
+      'leave_returned',
+      (w) => {
+        w.classify.mockResolvedValue(D('leave'));
+        w.runLeave.mockResolvedValue(cardResult(C('RETURN_TO_EMPLOYEE')));
+      },
+    ],
+    [
+      'escalated',
+      (w) => w.classify.mockResolvedValue({ not: 'a decision' } as unknown as RoutingDecision),
+    ],
+    ['policy_answer', (w) => w.classify.mockResolvedValue(D('policy_qa'))],
+    [
+      'policy_escalated',
+      (w) => {
+        w.classify.mockResolvedValue(D('policy_qa'));
+        w.runPolicyQa.mockResolvedValue(qaFailed('lr-001'));
+      },
+    ],
+  ];
+  it.each(arrange)('AT-7: %s has a usage key whose value is a Usage', async (outcome, setUp) => {
+    const w = makeWorld();
+    setUp(w);
+    const { post } = await boot(w);
+    expect((await post('emp-004', 'A synthetic message')).status).toBe(200);
+    const events = w.sink.events.filter((e) => e.payload.kind === 'intake_outcome');
+    expect(events).toHaveLength(1);
+    const payload = events[0]?.payload ?? {};
+    expect(payload.outcome).toBe(outcome);
+    expect(Usage.safeParse(payload.usage).success).toBe(true);
   });
 });

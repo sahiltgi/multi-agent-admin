@@ -6,6 +6,7 @@
 import { createHash } from 'node:crypto';
 import { AuditEvent } from '../domain/schemas.js';
 import { HttpError } from '../http/errors.js';
+import { requestUsage } from '../metrics/usage.js';
 import type { Actor } from '../http/identity.js';
 import { defineRoute, type RouteDefinition } from '../http/route.js';
 import { createDispatcher, NO_RECORD, toView, type RecordParts } from './dispatch.js';
@@ -36,8 +37,10 @@ export function createIntakeRoutes(deps: IntakeDeps): RouteDefinition[] {
       { kind: 'classify', text },
       { retryOnModelUnavailable: false },
     );
+    // spec agent-metrics, rules 7–9: after the last agent run; null when the read-back fails.
+    const usage = await requestUsage(deps.auditReader, deps.pricing, [requestId]);
 
-    const buildEvent = (parts: EventParts): AuditEvent =>
+    const buildEvent = (parts: EventParts, internalError = false): AuditEvent =>
       AuditEvent.parse({
         id: deps.idGen(),
         traceId: requestId,
@@ -52,6 +55,8 @@ export function createIntakeRoutes(deps: IntakeDeps): RouteDefinition[] {
           routingSource: routing.routingSource,
           injectionSuspected: routing.injectionSuspected,
           ...parts,
+          usage,
+          ...(internalError ? { internalError: true } : {}),
         }),
       });
 
@@ -73,7 +78,10 @@ export function createIntakeRoutes(deps: IntakeDeps): RouteDefinition[] {
     /** Best effort, on paths that already end in a 500. */
     const tryAudit = async (escalation: string): Promise<void> => {
       try {
-        await deps.audit.write(buildEvent({ ...NO_RECORD, outcome: 'escalated', escalation }));
+        // spec agent-metrics D-5: marked, so a 500 never counts as an escalation.
+        await deps.audit.write(
+          buildEvent({ ...NO_RECORD, outcome: 'escalated', escalation }, true),
+        );
       } catch {
         // The response is a 500 either way.
       }

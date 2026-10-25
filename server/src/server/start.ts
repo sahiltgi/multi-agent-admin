@@ -11,7 +11,7 @@ import { createScrubber, secretsOfUri } from '../lib/secrets.js';
 import type { MongoHandle } from '../persistence/mongo/connect.js';
 import { PolicyLoadError } from '../policies/load.js';
 import type { ServerParts } from './app.js';
-import type { BootFiles } from './boot.js';
+import { SHIPPED_AGENT_CONFIGS, unpricedModels, type BootFiles } from './boot.js';
 import type { ListeningServer } from './http.js';
 import { systemClock, timerScheduler, uuidIdGen } from './runtime.js';
 
@@ -114,6 +114,14 @@ export async function startServer(deps: StartDeps): Promise<number> {
     boot = await deps.loadBootFiles(PROMPTS_ROOT);
   } catch (err) {
     stderr(scrub(`startup: prompt files failed: ${messageOf(err)}`));
+    return 1;
+  }
+  // spec agent-metrics, rule 4: a running server never meets an unpriced shipped model.
+  const unpriced = unpricedModels(boot.pricing, SHIPPED_AGENT_CONFIGS);
+  if (unpriced.length > 0) {
+    for (const { model: m, agentId } of unpriced) {
+      stderr(scrub(`startup: pricing has no entry for model ${m} (agent ${agentId})`));
+    }
     return 1;
   }
   try {

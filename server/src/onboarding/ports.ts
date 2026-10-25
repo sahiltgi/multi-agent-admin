@@ -15,6 +15,8 @@ import type {
   LeaveRequestStore,
   OnboardingTextLoader,
 } from '../intake/ports.js';
+import type { AuditReader } from '../http/approvals/ports.js';
+import type { Pricing } from '../lib/cost.js';
 
 /**
  * The boot-time onboarding policy, typed structurally so onboarding/ never imports gate/
@@ -49,4 +51,7 @@ export interface OnboardingRouteDeps {
   ) => Promise<unknown>;
   onboardingTexts: OnboardingTextLoader;
   intakeTexts: Pick<IntakeTextLoader, 'load'>;
+  /** Reads the request's own model-call events back for its `usage` (spec agent-metrics, rule 7). */
+  auditReader: AuditReader;
+  pricing: Pricing; // the boot-time evals/pricing.yaml
 }

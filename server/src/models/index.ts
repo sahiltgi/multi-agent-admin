@@ -164,6 +164,9 @@ const auditEventSchema = new Schema<AuditEvent>(
   TOP_LEVEL,
 );
 
+// GET /metrics/agents reads summary events by kind over a time window (spec agent-metrics, rule 15).
+auditEventSchema.index({ 'payload.kind': 1, at: 1 });
+
 // Append-only (rule 10): every update, replace and delete is refused. Inserts are the only write.
 function refuseAuditChange(): never {
   throw new Error('AuditEvent is append-only: updates and deletes are not allowed');

@@ -6,6 +6,8 @@
 import { MAX_USER_TEXT_CHARS } from '../agents/schemas.js';
 import { AuditEvent } from '../domain/schemas.js';
 import { HttpError } from '../http/errors.js';
+import type { Usage } from '../lib/cost.js';
+import { requestUsage } from '../metrics/usage.js';
 import { defineRoute, type RouteDefinition } from '../http/route.js';
 import {
   createDispatcher,
@@ -111,6 +113,7 @@ export function createChatRoutes(deps: ChatDeps): RouteDefinition[] {
         escalation: TurnEscalation | null;
         taskActiveAfter: boolean;
         records: RecordParts;
+        usage: Usage | null;
       }): AuditEvent =>
         AuditEvent.parse({
           id: eventId,
@@ -137,8 +140,22 @@ export function createChatRoutes(deps: ChatDeps): RouteDefinition[] {
             draftMessageCount: taskBefore?.messages.length ?? 0, // a count only, never text
             ...p.records,
             injectionSuspected: turn.routing.injectionSuspected,
+            usage: p.usage,
           }),
         });
+
+      /** spec agent-metrics, rules 7, 10: both traces on a hand-back turn; null on a failed read. */
+      // Read once (rule 7): every caller runs after the turn's last agent run, so a later call (a
+      // lost-race conflict event after the turn event was built) reuses the first result.
+      let usageRead: Promise<Usage | null> | null = null;
+      const turnUsage = (): Promise<Usage | null> => {
+        usageRead ??= requestUsage(
+          intake.auditReader,
+          intake.pricing,
+          handedBackFrom === null ? [turnId] : [handedBackFrom, turnId],
+        );
+        return usageRead;
+      };
 
       /** Best effort, on paths that already end in an error response. */
       const tryEvent = async (
@@ -152,6 +169,7 @@ export function createChatRoutes(deps: ChatDeps): RouteDefinition[] {
               escalation,
               taskActiveAfter: taskBefore !== null, // the conversation is unchanged
               records: NO_RECORD,
+              usage: await turnUsage(),
             }),
           );
         } catch {
@@ -436,6 +454,7 @@ export function createChatRoutes(deps: ChatDeps): RouteDefinition[] {
             },
       );
       if (!response.success || !next.success) return fail('parse_error');
+      const usage = await turnUsage();
       let event: AuditEvent;
       try {
         event = buildEvent({
@@ -443,6 +462,7 @@ export function createChatRoutes(deps: ChatDeps): RouteDefinition[] {
           escalation: result.escalation,
           taskActiveAfter: task.activeAgent !== null,
           records: result.records,
+          usage,
         });
       } catch {
         return fail('parse_error');

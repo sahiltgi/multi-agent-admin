@@ -23,6 +23,9 @@ import {
 import type { IdempotencyStore, IntakeDeps, IntakeTextName } from './ports.js';
 import { createIntakeRoutes } from './routes.js';
 import { MessageResponse } from './schemas.js';
+import { Pricing } from '../lib/cost.js';
+
+const NO_PRICING = Pricing.parse({ version: 1, asOf: '2026-10-01', currency: 'USD', models: {} });
 
 const NOW = '2026-10-16T09:00:00Z';
 const POLICY_HASH = '0123456789abcdef'.repeat(4);
@@ -102,6 +105,8 @@ function world(opts: {
     approvals,
     approvalReader: approvals,
     audit: sink,
+    auditReader: new InMemoryAuditReader(sink),
+    pricing: NO_PRICING, // nothing priced, so usage is null (spec agent-metrics, rule 9)
     clock: { nowIso: () => NOW },
     idGen,
     classify,
