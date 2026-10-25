@@ -65,8 +65,8 @@ scripts/             repo tooling (test-one.mjs)
 .claude/skills/      workflow skills: new-feature, run-evals, change-policy, fix-issue, open-pr
 .claude/rules/       path-scoped rules: gate, agents, web
 .husky/pre-commit    git hook: lint-staged, then gitleaks on staged changes
-.github/             CI workflow (human-edited only), CODEOWNERS, PR template
-docs/                brief.md, architecture.md, ai-policy.md, dev-agents.md, mcp-inventory.md
+.github/             CI and eval workflows (human-edited only; docs/ci-agents.md), CODEOWNERS, PR template
+docs/                brief.md, architecture.md, ai-policy.md, dev-agents.md, ci-agents.md, mcp-inventory.md
 docs/adr/            architecture decision records
 handbook/            synthetic employee handbook (HB-x.y section IDs); Policy Q&A source (ADR-0003)
 README.md            clone-to-green and a where-to-find-what map
