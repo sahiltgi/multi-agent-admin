@@ -59,7 +59,7 @@ flowchart LR
 ```
 server/src/          API server source; *.test.ts files sit next to the code
 web/src/             React UI; *.test.ts(x) files sit next to the code
-scripts/             repo tooling (test-one.mjs)
+scripts/             repo tooling (test-one.mjs, dev-metrics.ts)
 .claude/hooks/       Claude Code hooks + their tests (human-edited only)
 .claude/agents/      dev subagents: spec-writer, test-writer, eval-drafter, reviewers (docs/dev-agents.md)
 .claude/skills/      workflow skills: new-feature, run-evals, change-policy, fix-issue, open-pr
