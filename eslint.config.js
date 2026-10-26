@@ -21,6 +21,8 @@ export default defineConfig(
           './server/tsconfig.json',
           './web/tsconfig.app.json',
           './web/tsconfig.node.json',
+          './web/tsconfig.test.json',
+          './shared/tsconfig.json',
         ],
         tsconfigRootDir: import.meta.dirname,
       },
@@ -30,7 +32,14 @@ export default defineConfig(
     },
   },
   {
-    files: ['*.{js,mjs,ts}', 'scripts/**', 'server/**', 'web/vite.config.ts', '.claude/hooks/**'],
+    files: [
+      '*.{js,mjs,ts}',
+      'scripts/**',
+      'server/**',
+      'shared/**',
+      'web/vite.config.ts',
+      '.claude/hooks/**',
+    ],
     languageOptions: { globals: globals.node },
   },
   {

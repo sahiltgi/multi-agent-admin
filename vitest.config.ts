@@ -6,6 +6,14 @@ export default defineConfig({
       'server',
       'web',
       {
+        // spec web-shell, rule 18: the @hr/shared facade
+        test: {
+          name: 'shared',
+          environment: 'node',
+          include: ['shared/src/**/*.test.ts'],
+        },
+      },
+      {
         test: {
           name: 'hooks',
           environment: 'node',

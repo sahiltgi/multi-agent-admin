@@ -561,6 +561,8 @@ Answers to the former open questions, approved by the owner on 2026-10-16 ("appr
 
 - **Amended by `specs/onboarding.md` OQ-14 (accepted by the owner on 2026-10-21):** Rule 7: the `onboarding` label no longer returns `not_available`. A non-`hr_admin` actor gets the fixed `prompts/onboarding/messages/denied.txt` reply (`reply`, label `onboarding`); an `hr_admin` runs the Onboarding Agent once (onboarding rules 19–22). `MessageResponse` gains `{ kind: 'onboarding_checklist', requestId, checklistId, text, pendingDeviations }`, the `question` label enum gains `onboarding`, `DispatchEscalation` gains `multiple_checklists`, `deviation_without_checklist` and `invalid_deviation`, and `IntakeOutcome` gains `onboarding_checklist`. `IntakePayload` gains optional `checklistId`, `pendingDeviations` and `onboardingVerdict` (onboarding ID-8). Writes for an onboarding result go checklist → deviations → items → event, and compensate in reverse. `IntakeDeps` gains `runOnboarding`, `onboarding` (the `OnboardingStore`) and `onboardingTexts`. `not_available.txt` stays a required boot file. Existing tests that expected `not_available` for an employee's onboarding message now expect the `denied` text.
 
+- **Amended by specs/web-shell.md (2026-10-26):** "Shared schemas move to `shared/` when web first imports them" (Inputs and outputs) is replaced by a facade. The `shared/` workspace (`@hr/shared`) is a thin facade: `shared/src/api.ts` only re-exports the HTTP contract schemas from `server/src/`, so no schema moves out of the server and the web never redeclares one. A test keeps the facade's import graph zod-only (web-shell rules 16–17, D-2, D-3).
+
 ## Open questions
 
 None.

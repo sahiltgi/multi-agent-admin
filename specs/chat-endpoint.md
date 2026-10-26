@@ -979,6 +979,8 @@ Each item names the clause it changes. The amendments take effect when this spec
 
 - **Amended by `specs/onboarding.md` OQ-14 (accepted by the owner on 2026-10-21):** `/chat` runs onboarding through the shared dispatcher as a single turn (onboarding OQ-12), so `Conversation.activeAgent` stays `'leave' | null`. `ChatStatus` gains `checklist_created` and `pending_manager`, both with an `onboarding_checklist` card `{ checklistId, pendingDeviations }`. `ChatTurnPayload` gains the optional `checklistId`, `pendingDeviations` and `onboardingVerdict` from `IntakePayload` (onboarding ID-8). An employee's or manager's onboarding message gets the `denied` text instead of `not_available`.
 
+- **Amended by specs/web-shell.md (2026-10-26):** "Shared schemas move to `shared/` when web first imports them" (Inputs and outputs) is replaced by a facade. The `shared/` workspace (`@hr/shared`) is a thin facade: `shared/src/api.ts` only re-exports the HTTP contract schemas from `server/src/`, so no schema moves out of the server and the web never redeclares one. A test keeps the facade's import graph zod-only (web-shell rules 16–17, D-2, D-3).
+
 ## Open questions
 
 None.

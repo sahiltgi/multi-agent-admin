@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["es2024"],
+    "module": "esnext",
+    // bundler resolution maps the server's `.js` specifiers to `.ts`, as Vite does (spec web-shell D-2)
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "noEmit": true,
+    "tsBuildInfoFile": "../node_modules/.tmp/tsconfig.shared.tsbuildinfo"
+  },
+  "include": ["src"]
+}

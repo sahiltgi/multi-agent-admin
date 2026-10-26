@@ -59,6 +59,7 @@ flowchart LR
 ```
 server/src/          API server source; *.test.ts files sit next to the code
 web/src/             React UI; *.test.ts(x) files sit next to the code
+shared/src/          @hr/shared: re-exports the server's HTTP contract schemas for web (specs/web-shell.md)
 scripts/             repo tooling (test-one.mjs, dev-metrics.ts)
 .claude/hooks/       Claude Code hooks + their tests (human-edited only)
 .claude/agents/      dev subagents: spec-writer, test-writer, eval-drafter, reviewers (docs/dev-agents.md)
@@ -108,5 +109,5 @@ Planned in brief §9. Most parts don't exist yet; the notes say which do. Create
 - `server/src/evals/`: the eval runner behind `npm run evals` (spec eval-runner). Runs each case on a fresh in-memory world seeded from the fixtures, through the production agents and `buildApp` called in-process, scores in code (`score/`, never a model), prices each case's model calls from `evals/pricing.yaml`, and writes one `evals/results/<date>-<agent>-<promptVersion>.json` per agent. Imports nothing from `server/src/gate/`.
 - `prompts/`: versioned agent prompts.
 - `evals/`: labeled eval cases, `thresholds.yaml`, `pricing.yaml` and the committed `results/` of each run.
-- `shared/`: Zod schemas used by both server and web. Until web needs them, the domain schemas live in `server/src/domain/` (spec domain-schemas D-1).
-- `web/src/`: employee chat, approval queue, audit and evals views.
+- `shared/`: the `@hr/shared` workspace, a thin facade over the server's Zod schemas (spec `specs/web-shell.md` D-2, amending domain-schemas D-1). `shared/src/api.ts` only re-exports the HTTP contract (chat, approvals, audit trace, error body, `MAX_USER_TEXT_CHARS`, domain enums) from `server/src/`; no schema moves, and a test keeps its import graph zod-only so it bundles for the browser.
+- `web/src/`: the web shell (spec web-shell): a persona switcher that sets `x-demo-user` (Asha `emp-003`, Ravi `emp-002`, Meera `emp-001`; web-only labels), and read-only `/chat`, `/queue` and `/audit` routes that parse every response with `@hr/shared`. Rich cards, approval actions, the trace timeline and the evals view are later specs.

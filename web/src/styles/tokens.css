@@ -1,0 +1,41 @@
+/* Design tokens: "Quiet ledger" (spec web-shell, Visual direction). Plain CSS, no web fonts. */
+:root {
+  --surface: #faf8f4;
+  --surface-raised: #f3f0ea;
+  --ink: #1f2328;
+  --ink-muted: #5c636b;
+  --rule: #e2ddd3;
+  --accent: #0f6e6e;
+  --accent-ink: #ffffff;
+
+  --tone-neutral: #4a5560;
+  --tone-amber: #8a5a00;
+  --tone-plum: #74306b;
+  --tone-grey: #6e737a;
+
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+
+  --header-height: 56px;
+  --content-max: 960px;
+  --gutter: 24px;
+  --gutter-phone: 16px;
+  --radius-pill: 999px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: #15181c;
+    --surface-raised: #1d2126;
+    --ink: #e6e3dc;
+    --ink-muted: #9aa1a8;
+    --rule: #2c3138;
+    --accent: #4fb3b3;
+    --accent-ink: #0b1414;
+
+    --tone-neutral: #a9b4bf;
+    --tone-amber: #e0b25a;
+    --tone-plum: #d39ac9;
+    --tone-grey: #8c9198;
+  }
+}
