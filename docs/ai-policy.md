@@ -69,3 +69,28 @@ These apply to every commit, whoever or whatever wrote it. Setup and the commit 
 | `.github/workflows/ai-review.yml`   | Optional read-only Claude PR review: comments only, never pushes. Own key in the `ANTHROPIC_API_KEY_REVIEW` repository secret. See [ci-agents.md](ci-agents.md).                                                                                                                                                                                   |
 | `.github/CODEOWNERS`                | Agent instructions, `.claude/`, `.husky/`, `.mcp.json`, `policies/`, `prompts/` and `.github/` need the code owner's review.                                                                                                                                                                                                                       |
 | Branch protection (GitHub settings) | Set by hand. Required checks, code owner review, no force push. Not stored in the repo.                                                                                                                                                                                                                                                            |
+
+## Usage and cost tracking
+
+How we see what AI costs and how it's used, in development and in the app. The Claude Code facts below were checked against the official docs on 2026-10-25: [costs](https://code.claude.com/docs/en/costs.md), [monitoring](https://code.claude.com/docs/en/monitoring-usage.md), [commands](https://code.claude.com/docs/en/commands.md) and the [CLI reference](https://code.claude.com/docs/en/cli-reference.md).
+
+- **Per session (`/cost`):** run `/cost` at the end of each Claude Code session and record the figure in the `Cost` column of [AI_LOG.md](../AI_LOG.md).
+  - `/cost` is an alias of `/usage`. Its session dollar figure is a local estimate at list price, and it matters for API-key (Console) billing. On a Pro or Max subscription it isn't a bill, so record the plan usage `/usage` shows instead.
+  - The authoritative bill is the Usage page of the Claude Console.
+- **Telemetry (off):** Claude Code can export OpenTelemetry metrics, including `claude_code.cost.usage` and `claude_code.token.usage`. It's off today.
+  - Claude Code ignores the OTEL exporter variables in a repository's `.claude/settings.json` and `.claude/settings.local.json`, so this repo can't turn it on. Telemetry config belongs in managed settings, user settings (`~/.claude/settings.json`) or the shell.
+  - To enable it, a human sets `CLAUDE_CODE_ENABLE_TELEMETRY=1`, `OTEL_METRICS_EXPORTER`, `OTEL_EXPORTER_OTLP_PROTOCOL` and `OTEL_EXPORTER_OTLP_ENDPOINT`, and records the collector endpoint in this section.
+  - Cost and token numbers need only the metrics exporter. Set `OTEL_LOGS_EXPORTER` only if events are needed, because logs carry more detail.
+  - Before enabling it, check in the monitoring docs which identity attributes (account, session) are sent by default.
+  - Prompt text is redacted unless `OTEL_LOG_USER_PROMPTS=1`. Never set it here: prompts can quote repo files.
+  - Never commit `OTEL_EXPORTER_OTLP_HEADERS` or any collector token. They are secrets, like `.env`.
+- **Budget alert:** `TODO(owner)`. Record:
+  - where the alert or spend limit is set (Claude Console workspace or organization limits);
+  - the amount;
+  - who receives the alert;
+  - whether the CI keys `ANTHROPIC_API_KEY_EVALS` and `ANTHROPIC_API_KEY_REVIEW` sit in their own workspace with their own limits.
+
+  No limit is recorded here until the owner fills this in. For one-off headless runs, `claude -p --max-budget-usd <amount>` stops a run at an estimated spend.
+
+- **Dev metrics:** `npm run dev-metrics` regenerates [`docs/dev-metrics.md`](dev-metrics.md). It reports AI-assisted commits (any `Co-authored-by` trailer), reverts, hook blocks from the local `.claude/logs/blocked.jsonl`, and AI_LOG entries that added a rule (spec dev-metrics). Hook-block counts come from the machine that generated the file.
+- **App-side metrics:** each request's summary audit event carries `usage` (tokens and USD, priced from `evals/pricing.yaml`), and hr_admin can read the totals from `GET /metrics/agents`. Both are specified in [specs/agent-metrics.md](../specs/agent-metrics.md).

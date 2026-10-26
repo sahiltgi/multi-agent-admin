@@ -20,6 +20,7 @@
     "seed": "node --env-file-if-exists=.env --import tsx server/src/seeds/cli.ts",
     "start": "node --env-file-if-exists=.env --import tsx server/src/index.ts",
     "evals": "node --env-file-if-exists=.env --import tsx server/src/evals/cli.ts",
+    "dev-metrics": "node --import tsx scripts/dev-metrics.ts",
     "prepare": "husky"
   },
   "lint-staged": {
@@ -49,6 +50,7 @@
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.71.1",
     "vite": "^8.3.3",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.3",
+    "zod": "^4.6.7"
   }
 }

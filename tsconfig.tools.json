@@ -15,6 +15,7 @@
     "vitest.config.ts",
     "eslint.config.js",
     "scripts/**/*.mjs",
+    "scripts/**/*.ts",
     ".claude/hooks/**/*.mjs",
     ".claude/hooks/**/*.ts"
   ]
