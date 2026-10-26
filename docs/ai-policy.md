@@ -93,4 +93,4 @@ How we see what AI costs and how it's used, in development and in the app. The C
   No limit is recorded here until the owner fills this in. For one-off headless runs, `claude -p --max-budget-usd <amount>` stops a run at an estimated spend.
 
 - **Dev metrics:** `npm run dev-metrics` regenerates [`docs/dev-metrics.md`](dev-metrics.md). It reports AI-assisted commits (any `Co-authored-by` trailer), reverts, hook blocks from the local `.claude/logs/blocked.jsonl`, and AI_LOG entries that added a rule (spec dev-metrics). Hook-block counts come from the machine that generated the file.
-- **App-side metrics:** each request's summary audit event carries `usage` (tokens and USD, priced from `evals/pricing.yaml`), and hr_admin can read the totals from `GET /metrics/agents`. Both are specified in the agent-metrics spec, on the `feat/agent-metrics` branch.
+- **App-side metrics:** each request's summary audit event carries `usage` (tokens and USD, priced from `evals/pricing.yaml`), and hr_admin can read the totals from `GET /metrics/agents`. Both are specified in [specs/agent-metrics.md](../specs/agent-metrics.md).
