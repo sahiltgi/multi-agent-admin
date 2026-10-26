@@ -1,0 +1,19 @@
+// @hr/shared: the HTTP contract the web uses, re-exported from the server's own Zod schemas
+// (spec web-shell, rule 16, D-2). Re-exports only: nothing is declared here, and every name is
+// the identical object the server module exports. The import graph stays zod-only (rule 17).
+export { ChatBody, ChatResponse, ConversationView } from '../../server/src/chat/schemas.js';
+export {
+  ApprovalItemView,
+  ListApprovalsResponse,
+  TraceResponse,
+} from '../../server/src/http/approvals/schemas.js';
+export { ErrorBody, ErrorCode } from '../../server/src/http/errors.js';
+export { MAX_USER_TEXT_CHARS } from '../../server/src/agents/schemas.js';
+export {
+  ApprovalKind,
+  ApprovalStatus,
+  LeaveVerdict,
+  OnboardingVerdict,
+  Role,
+} from '../../server/src/domain/schemas.js';
+export { QaVerdict } from '../../server/src/domain/qa.js';

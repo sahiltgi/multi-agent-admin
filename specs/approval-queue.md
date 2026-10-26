@@ -462,6 +462,8 @@ Category: `routing | extraction | verdict | citation | injection`. These categor
 
 - **Amended by `specs/chat-endpoint.md` (2026-10-16):** `ErrorCode` in `server/src/http/errors.ts` gains `conversation_conflict` (409, "This conversation changed while your message was being handled. Please reload and try again.") and `conversation_full` (409, "This conversation is full. Please start a new one.") for `POST /chat` (chat-endpoint D-4, D-7).
 
+- **Amended by specs/web-shell.md (2026-10-26):** "Shared schemas go in `shared/` when web first imports them" (Inputs and outputs) is replaced by a facade. The `shared/` workspace (`@hr/shared`) is a thin facade: `shared/src/api.ts` only re-exports the HTTP contract schemas from `server/src/`, so no schema moves out of the server and the web never redeclares one. A test keeps the facade's import graph zod-only (web-shell rules 16–17, D-2, D-3).
+
 ## Open questions
 
 Answered by the owner on 2026-10-15 (accepted the proposed defaults). Each answer is written into the rules and ATs it touched.

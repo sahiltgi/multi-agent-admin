@@ -1,0 +1,237 @@
+/* Layout and components for the web shell (spec web-shell, Visual direction: Quiet ledger).
+   Hairline rules instead of shadows; one accent for the active tab, focus and the primary button. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.muted {
+  color: var(--ink-muted);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- header ---- */
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--gutter);
+  min-height: var(--header-height);
+  padding: 0 var(--gutter);
+  border-bottom: 1px solid var(--rule);
+}
+
+.brand {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.tabs {
+  display: flex;
+  flex: 1;
+  justify-content: center;
+  gap: 4px;
+}
+
+.tab {
+  padding: 6px 12px;
+  color: var(--ink-muted);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+}
+
+.tab[aria-current='page'] {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* ---- persona switcher: a segmented control over native radios ---- */
+.switcher {
+  display: inline-flex;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.switcher-option {
+  position: relative;
+  cursor: pointer;
+}
+
+.switcher-option + .switcher-option {
+  border-left: 1px solid var(--rule);
+}
+
+.switcher-option input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.switcher-option span {
+  display: block;
+  padding: 4px 12px;
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+
+.switcher-option input:checked + span {
+  background: var(--surface-raised);
+  font-weight: 600;
+}
+
+.switcher-option input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* ---- content ---- */
+.content {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: var(--gutter);
+}
+
+.page-title {
+  margin: 0 0 16px;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.state {
+  color: var(--ink-muted);
+}
+
+.state-error {
+  color: var(--ink);
+  padding: 8px 12px;
+  border-left: 2px solid var(--tone-plum);
+}
+
+.rows,
+.turns {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.turn {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.turn p {
+  margin: 0 0 4px;
+}
+
+.turn-sent {
+  color: var(--ink-muted);
+}
+
+.turn-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inline-form {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.inline-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+button.primary {
+  padding: 8px 16px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+button.primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ---- verdict badge: outlined pill, the text always carries the verdict ---- */
+.badge {
+  display: inline-block;
+  padding: 1px 10px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-pill);
+  font-size: 0.8em;
+}
+
+.badge[data-tone='neutral'] {
+  color: var(--tone-neutral);
+}
+.badge[data-tone='amber'] {
+  color: var(--tone-amber);
+}
+.badge[data-tone='plum'] {
+  color: var(--tone-plum);
+}
+.badge[data-tone='grey'] {
+  color: var(--tone-grey);
+}
+
+/* ---- phone width ---- */
+@media (max-width: 640px) {
+  .header {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px var(--gutter-phone);
+  }
+  .tabs {
+    order: 3;
+    flex-basis: 100%;
+    justify-content: flex-start;
+  }
+  .content {
+    padding: var(--gutter-phone);
+  }
+}
