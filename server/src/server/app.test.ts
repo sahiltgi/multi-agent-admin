@@ -245,6 +245,7 @@ describe('buildApp', () => {
         'GET /onboarding/:checklistId',
         'PATCH /onboarding/:checklistId/tasks/:taskId',
         'GET /metrics/agents', // spec agent-metrics, rule 12
+        'GET /handbook/sections/:id', // spec employee-chat, rule 14
       ].sort(),
     );
   });

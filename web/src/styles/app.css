@@ -197,8 +197,9 @@ button.primary:disabled {
   cursor: not-allowed;
 }
 
-/* ---- verdict badge: outlined pill, the text always carries the verdict ---- */
-.badge {
+/* ---- verdict badge and status pill: outlined pills, the text always carries the value ---- */
+.badge,
+.pill {
   display: inline-block;
   padding: 1px 10px;
   border: 1px solid currentColor;
@@ -206,17 +207,72 @@ button.primary:disabled {
   font-size: 0.8em;
 }
 
-.badge[data-tone='neutral'] {
+.pill {
+  border-style: dashed; /* tells a status apart from a verdict without relying on colour */
+}
+
+:is(.badge, .pill)[data-tone='neutral'] {
   color: var(--tone-neutral);
 }
-.badge[data-tone='amber'] {
+:is(.badge, .pill)[data-tone='amber'] {
   color: var(--tone-amber);
 }
-.badge[data-tone='plum'] {
+:is(.badge, .pill)[data-tone='plum'] {
   color: var(--tone-plum);
 }
-.badge[data-tone='grey'] {
+:is(.badge, .pill)[data-tone='grey'] {
   color: var(--tone-grey);
+}
+
+/* ---- citation chips and the inline handbook section (spec employee-chat) ---- */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  padding: 1px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 0.85em;
+  cursor: pointer;
+}
+
+.chip[aria-expanded='true'] {
+  border-color: var(--accent);
+}
+
+.section-panel {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--rule);
+}
+
+.section-text {
+  margin: 0 0 8px;
+  white-space: pre-wrap; /* the server's text, line breaks and all, never re-wrapped */
+}
+
+.section-panel button {
+  padding: 4px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.my-requests {
+  margin-top: 32px;
+}
+
+.section-title {
+  margin: 0 0 8px;
+  font-size: 1rem;
 }
 
 /* ---- phone width ---- */

@@ -15,6 +15,7 @@ import { detectInjectionHeuristic } from '../agents/untrusted.js';
 import { createChatRoutes } from '../chat/routes.js';
 import type { LoadedLeavePolicy } from '../gate/leave-policy.schema.js';
 import { evaluateOnboarding } from '../gate/onboarding.js';
+import { createHandbookRoutes } from '../handbook/routes.js';
 import { createApp } from '../http/app.js';
 import type { ApprovalApiDeps } from '../http/approvals/ports.js';
 import type { IntakeDeps } from '../intake/ports.js';
@@ -156,5 +157,7 @@ export function buildApp(parts: ServerParts): Express {
     }),
     // spec agent-metrics, rules 12, 13: hr_admin only, read-only.
     ...createMetricsRoutes({ summaries: stores.audit, clock }),
+    // spec employee-chat, rule 14: read-only handbook sections from the boot-loaded body.
+    ...createHandbookRoutes({ handbook: boot.handbook }),
   ]);
 }
