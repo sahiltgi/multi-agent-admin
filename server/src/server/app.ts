@@ -20,6 +20,7 @@ import type { ApprovalApiDeps } from '../http/approvals/ports.js';
 import type { IntakeDeps } from '../intake/ports.js';
 import { createIntakeRoutes } from '../intake/routes.js';
 import { toIsoDate } from '../lib/dates.js';
+import { createMetricsRoutes } from '../metrics/routes.js';
 import { createOnboardingRoutes, type OnboardingRouteDeps } from '../onboarding/routes.js';
 import type { ServerStores } from '../persistence/mongo/connect.js';
 import type { BootFiles } from './boot.js';
@@ -120,6 +121,9 @@ export function buildApp(parts: ServerParts): Express {
       parts.agents?.runOnboarding ?? ((input) => runOnboardingAgent(input, onboardingDeps)),
     onboarding: stores.onboarding,
     onboardingTexts: boot.onboardingTexts,
+    // spec agent-metrics, rule 7: each summary event's usage is read back from the trace.
+    auditReader: stores.audit,
+    pricing: boot.pricing,
   };
   return createApp(approvalDeps, [
     ...createIntakeRoutes(intakeDeps),
@@ -147,6 +151,10 @@ export function buildApp(parts: ServerParts): Express {
         ((input, tasks) => runOnboardingNotesAgent(input, tasks, onboardingDeps)),
       onboardingTexts: boot.onboardingTexts,
       intakeTexts: boot.intakeTexts,
+      auditReader: stores.audit,
+      pricing: boot.pricing,
     }),
+    // spec agent-metrics, rules 12, 13: hr_admin only, read-only.
+    ...createMetricsRoutes({ summaries: stores.audit, clock }),
   ]);
 }

@@ -33,6 +33,9 @@ import {
 import type { IntakeDeps, IntakeTextName } from './ports.js';
 import { createIntakeRoutes } from './routes.js';
 import { IntakePayload, MessageResponse, MyRequestsResponse } from './schemas.js';
+import { Pricing } from '../lib/cost.js';
+
+const NO_PRICING = Pricing.parse({ version: 1, asOf: '2026-10-01', currency: 'USD', models: {} });
 
 // ---- Fixtures (synthetic) ----
 const POLICY_HASH = '0123456789abcdef'.repeat(4);
@@ -198,6 +201,8 @@ function makeWorld(opts: WorldOptions = {}) {
     approvals,
     approvalReader: approvals,
     audit,
+    auditReader: new InMemoryAuditReader(sink),
+    pricing: NO_PRICING, // nothing priced, so usage is null (spec agent-metrics, rule 9)
     clock,
     idGen,
     classify,

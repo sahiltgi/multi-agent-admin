@@ -17,6 +17,7 @@ import type {
   IdempotencyStore,
   LeaveRequestStore,
 } from '../../intake/ports.js';
+import type { AuditSummaryReader } from '../../metrics/ports.js';
 import { MODELS } from '../../models/index.js';
 import { MongoApprovalStore } from './approvals.js';
 import { MongoAuditStore } from './audit.js';
@@ -40,7 +41,7 @@ export interface ServerStores {
   directory: EmployeeDirectory & OnboardingDirectory; // getTeamById: spec onboarding OQ-7
   approvals: ApprovalStore & ApprovalItemWriter;
   leaveRequests: LeaveRequestStore & SubjectResolver;
-  audit: AuditSink & AuditReader;
+  audit: AuditSink & AuditReader & AuditSummaryReader; // listByKinds: spec agent-metrics, rule 15
   idempotency: IdempotencyStore;
   leaveData: LeaveDataPort;
   conversations: ConversationStore; // chat-endpoint rule 25

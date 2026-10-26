@@ -14,6 +14,7 @@ import {
   type LeaveRequest,
 } from '../../domain/schemas.js';
 import { redactText } from '../../lib/redact.js';
+import { SUMMARY_KINDS } from '../../metrics/ports.js';
 import { HttpError } from '../errors.js';
 import type { Actor } from '../identity.js';
 import { defineRoute, type RouteDefinition } from '../route.js';
@@ -113,20 +114,28 @@ async function loadVisible(deps: ApprovalApiDeps, actor: Actor, itemId: string):
   return loaded;
 }
 
+/** Request-summary payloads whose `usage` only hr_admin sees (spec agent-metrics, rule 11). */
+const USAGE_KINDS: ReadonlySet<unknown> = new Set(SUMMARY_KINDS);
+
 /**
  * spec policy-qa DD-24 (rule 23): what a reader who isn't hr_admin gets from a trace. Keyed on
  * event content, so it holds even when no PolicyQuestion was kept. The Q&A gate result (verdict,
  * topic names) and HR's actions on escalation items are dropped, and the per-turn qaVerdict is
- * masked. Leave gate results and leave decisions are unchanged.
+ * masked. A summary event's `usage` is dropped (spec agent-metrics, rule 11). Leave gate results
+ * and leave decisions are unchanged.
  */
 function askerView(e: AuditEvent): AuditEvent[] {
   const p = e.payload;
   if (p.kind === 'qa_gate_result') return [];
   if (e.eventType === 'human_action' && p.itemKind === 'escalation') return [];
-  if ((p.kind === 'intake_outcome' || p.kind === 'chat_turn') && 'qaVerdict' in p) {
-    return [{ ...e, payload: { ...p, qaVerdict: null } }];
+  let payload = p;
+  if (USAGE_KINDS.has(p.kind) && 'usage' in payload) {
+    payload = Object.fromEntries(Object.entries(payload).filter(([key]) => key !== 'usage'));
   }
-  return [e];
+  if ((p.kind === 'intake_outcome' || p.kind === 'chat_turn') && 'qaVerdict' in p) {
+    payload = { ...payload, qaVerdict: null };
+  }
+  return [payload === p ? e : { ...e, payload }];
 }
 
 function byCreatedAtThenId(a: ApprovalItemView, b: ApprovalItemView): number {

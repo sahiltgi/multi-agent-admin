@@ -21,6 +21,7 @@ import { HttpError } from '../http/errors.js';
 import type { Actor } from '../http/identity.js';
 import { defineRoute, type RouteDefinition } from '../http/route.js';
 import { undo } from '../intake/dispatch.js';
+import { requestUsage } from '../metrics/usage.js';
 import type { OnboardingRouteDeps } from './ports.js';
 import {
   CreateOnboardingBody,
@@ -98,6 +99,8 @@ export function createCreateRoute(deps: OnboardingRouteDeps): RouteDefinition {
   ): Promise<CreateOnboardingResponse> {
     const text = await deps.intakeTexts.load('escalated');
     if (text === null) throw new HttpError('internal_error'); // fail closed (onboarding ID-6)
+    // spec agent-metrics, rules 7, 8: whatever the notes agent spent before the escalation.
+    const usage = await requestUsage(deps.auditReader, deps.pricing, [requestId]);
     const response = CreateOnboardingResponse.parse({
       kind: 'escalated',
       requestId,
@@ -112,6 +115,7 @@ export function createCreateRoute(deps: OnboardingRouteDeps): RouteDefinition {
         reason,
         agentReason,
         actorRole: actor.role,
+        usage,
       }),
     });
     try {
@@ -189,6 +193,8 @@ export function createCreateRoute(deps: OnboardingRouteDeps): RouteDefinition {
 
     const proposals = await proposalsFor(actor, requestId, body, tasks);
     if (!Array.isArray(proposals)) return proposals;
+    // spec agent-metrics, rule 7: after the last agent run; 0/0 when no notes ran the agent.
+    const usage = await requestUsage(deps.auditReader, deps.pricing, [requestId]);
 
     // Rule 5: one gate call with the code-built input; rationales, notes and the name never reach it.
     const gateOut = OnboardingGateResult.safeParse(
@@ -284,6 +290,7 @@ export function createCreateRoute(deps: OnboardingRouteDeps): RouteDefinition {
         agentRan: hasNotes,
         actorRole: actor.role,
         source: 'api',
+        usage,
       }),
     });
     const response = CreateOnboardingResponse.parse({

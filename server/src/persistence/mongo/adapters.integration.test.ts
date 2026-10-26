@@ -37,6 +37,7 @@ import type {
   IdempotencyStore,
   LeaveRequestStore,
 } from '../../intake/ports.js';
+import { auditSummaryReaderContract } from '../../metrics/listByKinds.test.js';
 import { MODELS, AuditEventModel } from '../../models/index.js';
 import { onboardingApiStoreContract } from '../../onboarding/store-contract.test.js';
 import { fixtures } from '../../seeds/fixtures.js';
@@ -662,6 +663,25 @@ auditContract('in-memory', () => {
 auditContract('mongo', () => {
   const store = new MongoAuditStore();
   return Promise.resolve({ sink: store, reader: store });
+});
+
+// agent-metrics AT-18 (INT): the same listByKinds contract against MongoAuditStore. The factory
+// empties the audit collection first so other contracts' events can't leak into the results.
+auditSummaryReaderContract('mongo', async (events) => {
+  // The model's append-only hooks refuse deleteMany; the raw collection is cleared (as for conversations).
+  await AuditEventModel.collection.deleteMany({});
+  const store = new MongoAuditStore();
+  for (const e of events) await store.write(e);
+  return store;
+});
+
+describe('agent-metrics AT-19 (INT): the audit summary index', () => {
+  it('AT-19: after startup index sync, AuditEventModel has an index on { payload.kind: 1, at: 1 }', async () => {
+    const indexes = await AuditEventModel.collection.indexes();
+    expect(
+      indexes.some((i) => JSON.stringify(i.key) === JSON.stringify({ 'payload.kind': 1, at: 1 })),
+    ).toBe(true);
+  });
 });
 
 describe('mongo handle and adapters', () => {

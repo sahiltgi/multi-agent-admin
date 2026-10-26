@@ -9,9 +9,10 @@ import type { Clock, Scheduler } from '../agents/runtime.js';
 import type { ModelClient } from '../agents/schemas.js';
 import { loadLeavePolicy } from '../policies/load.js';
 import { fixtures } from '../seeds/fixtures.js';
-import { loadBootFiles, type BootFiles } from '../server/boot.js';
+import { defaultQaBootPaths, loadBootFiles, type BootFiles } from '../server/boot.js';
 import { timerScheduler } from '../server/runtime.js';
-import { agentConfig, priceCase, requiredModels } from './cost.js';
+import { priceEvents } from '../lib/cost.js';
+import { agentConfig, requiredModels } from './cost.js';
 import { drive } from './drivers.js';
 import { readCases, readPricing, readThresholds, SetupError, type LoadedCase } from './load.js';
 import { watchModel, type WatchedModel } from './model.js';
@@ -171,9 +172,9 @@ async function runCase(c: LoadedCase, ctx: Ctx): Promise<CaseResult> {
   });
   // Calls that completed count even when the case errors. An unpriced model is that case's error,
   // never a cost of 0 (rule 24; D-21).
-  let priced: ReturnType<typeof priceCase>;
+  let priced: ReturnType<typeof priceEvents>;
   try {
-    priced = priceCase(world.sink.events, ctx.pricing);
+    priced = priceEvents(world.sink.events, ctx.pricing);
   } catch {
     return { ...base, status: 'error', errorCode: 'run_failed', latencyMs };
   }
@@ -262,7 +263,12 @@ export async function runEvals(deps: EvalDeps, agent?: EvalAgent): Promise<EvalO
     throw err;
   }
   try {
-    boot = await loadBootFiles(join(REPO_ROOT, 'prompts'));
+    // spec agent-metrics, rule 3: the runner's own pricing file, so tests never read the repo's.
+    const promptsRoot = join(REPO_ROOT, 'prompts');
+    boot = await loadBootFiles(promptsRoot, {
+      ...defaultQaBootPaths(promptsRoot),
+      pricingPath: join(deps.evalsDir, 'pricing.yaml'),
+    });
     policy = loadLeavePolicy(join(REPO_ROOT, 'policies', 'leave', 'v1.yaml'));
   } catch {
     return fail('the prompts, fixed texts or policies could not be loaded.');

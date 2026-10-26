@@ -15,6 +15,7 @@ import {
   TemplateId,
 } from '../domain/schemas.js';
 import { IDEMPOTENCY_KEY } from '../intake/schemas.js';
+import { Usage } from '../lib/cost.js';
 
 export const ChecklistParams = z.object({ checklistId: Id }).strict();
 export const TaskParams = z.object({ checklistId: Id, taskId: Id }).strict();
@@ -155,6 +156,8 @@ export const OnboardingCreatedPayload = z
     agentRan: z.boolean(),
     actorRole: Role,
     source: z.literal('api'),
+    // spec agent-metrics, rule 5: the request's totals, set by code; absent only on older events
+    usage: Usage.nullable().optional(),
   })
   .strict(); // no name, no notes
 
@@ -166,6 +169,8 @@ export const OnboardingCreateEscalatedPayload = z
     reason: CreateEscalation,
     agentReason: OnboardingEscalation.nullable(),
     actorRole: Role,
+    // spec agent-metrics, rule 5: the request's totals, set by code; absent only on older events
+    usage: Usage.nullable().optional(),
   })
   .strict();
 

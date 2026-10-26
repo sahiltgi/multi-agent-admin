@@ -64,6 +64,7 @@ export function createCaseWorld(realClock: Clock, asOf: string | null): CaseWorl
     audit: {
       write: (e) => sink.write(e),
       listByTrace: (t) => reader.listByTrace(t),
+      listByKinds: (kinds, from, to) => reader.listByKinds(kinds, from, to),
     },
     idempotency: new InMemoryIdempotencyStore(),
     // A snapshot of the seed: leave requests a case creates aren't counted as team absence. Safe

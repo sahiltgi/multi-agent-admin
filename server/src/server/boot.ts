@@ -1,14 +1,18 @@
 // Boot-time prompt files (spec mongo-persistence, rule 10 step 4; D-6). Every prompt, tool
 // description and fixed text is checked once at startup, so a missing or blank file stops the
 // server before it serves. Errors name the file path only, never its contents. The Policy Q&A
-// handbook and sensitive-topics policy are loaded here too (spec policy-qa, rule 26).
+// handbook and sensitive-topics policy are loaded here too (spec policy-qa, rule 26), and so is
+// evals/pricing.yaml for the per-request cost totals (spec agent-metrics, rule 3).
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { parse as parseYaml } from 'yaml';
+import type { AgentConfig } from '../agents/schemas.js';
 import { POLICY_QA_CONFIG } from '../agents/policy_qa/config.js';
 import { createFileQaTexts, QA_TEXTS, type QaTextLoader } from '../agents/policy_qa/texts.js';
 import { handbookBody, handbookSections } from '../domain/handbook.js';
 import { ONBOARDING_CONFIG, ONBOARDING_NOTES_CONFIG } from '../agents/onboarding/config.js';
+import { Pricing } from '../lib/cost.js';
 import {
   createOnboardingTextLoader,
   OnboardingAgentTextKey,
@@ -45,6 +49,9 @@ import type {
 } from '../intake/ports.js';
 import { createFileIntakeTexts, createFileOnboardingTexts } from '../intake/texts.js';
 
+/** The fields the pricing check reads; POLICY_QA_CONFIG has no tool loop, so isn't a full AgentConfig. */
+export type PricedAgent = Pick<AgentConfig, 'agentId' | 'model'>;
+
 export interface BootFiles {
   descriptions: ToolDescriptions;
   leaveToolDescriptions: LeaveToolDescriptions;
@@ -61,6 +68,7 @@ export interface BootFiles {
   onboardingToolDescriptions: OnboardingToolDescriptions;
   onboardingAgentTexts: OnboardingAgentTextLoader; // the agent's fixed questions
   onboardingTexts: OnboardingTextLoader; // dispatch's fixed replies
+  pricing: Pricing; // evals/pricing.yaml (spec agent-metrics, rule 3); coverage is checked in start.ts
 }
 
 export interface QaBootPaths {
@@ -68,6 +76,8 @@ export interface QaBootPaths {
   qaPolicyPath: string;
   /** Defaults to policies/onboarding/v1.yaml next to the prompts directory. */
   onboardingPolicyPath?: string;
+  /** Defaults to evals/pricing.yaml next to the prompts directory (spec agent-metrics, rule 3). */
+  pricingPath?: string;
 }
 
 /** The committed handbook and QA policy, next to the prompts directory. */
@@ -94,6 +104,44 @@ const ONBOARDING_TEXTS = [
   'denied',
 ] as const satisfies readonly OnboardingTextName[];
 const ONBOARDING_MESSAGES = [...ONBOARDING_TEXTS, 'escalated', ...OnboardingAgentTextKey.options];
+
+/** Every agent the server runs, so startup can refuse an unpriced model (spec agent-metrics, rule 4). */
+export const SHIPPED_AGENT_CONFIGS: readonly PricedAgent[] = [
+  ORCHESTRATOR_CONFIG,
+  LEAVE_CONFIG,
+  POLICY_QA_CONFIG,
+  ONBOARDING_CONFIG,
+  ONBOARDING_NOTES_CONFIG,
+];
+
+/** Pure: each config whose model has no pricing entry, in config order. */
+export function unpricedModels(
+  pricing: Pricing,
+  configs: readonly PricedAgent[],
+): { agentId: string; model: string }[] {
+  return configs
+    .filter((c) => !Object.hasOwn(pricing.models, c.model))
+    .map((c) => ({ agentId: c.agentId, model: c.model }));
+}
+
+/** Parsed pricing; rejects naming the path only, never a price (spec agent-metrics, rule 3). */
+async function loadPricing(path: string): Promise<Pricing> {
+  let raw: string;
+  try {
+    raw = await readFile(path, 'utf8');
+  } catch {
+    throw new Error(`boot file missing or unreadable: ${path}`);
+  }
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(raw);
+  } catch {
+    throw new Error(`boot file is not valid YAML: ${path}`);
+  }
+  const pricing = Pricing.safeParse(parsed);
+  if (!pricing.success) throw new Error(`boot file does not match the pricing schema: ${path}`);
+  return pricing.data;
+}
 
 /** Rejects naming the path when a file is missing, unreadable or blank. */
 async function requireText(path: string): Promise<void> {
@@ -161,6 +209,9 @@ export async function loadBootFiles(
   const onboardingPolicy = loadOnboardingPolicy(
     qaPaths.onboardingPolicyPath ?? join(promptsRoot, '..', 'policies', 'onboarding', 'v1.yaml'),
   );
+  const pricing = await loadPricing(
+    qaPaths.pricingPath ?? join(promptsRoot, '..', 'evals', 'pricing.yaml'),
+  );
 
   return {
     descriptions: await loadToolDescriptions(promptsRoot),
@@ -177,5 +228,6 @@ export async function loadBootFiles(
     onboardingToolDescriptions: await loadOnboardingToolDescriptions(promptsRoot),
     onboardingAgentTexts: createOnboardingTextLoader(join(promptsRoot, 'onboarding', 'messages')),
     onboardingTexts: createFileOnboardingTexts(join(promptsRoot, 'onboarding', 'messages')),
+    pricing,
   };
 }

@@ -36,6 +36,16 @@ import {
 } from './in-memory.js';
 import type { IntakeDeps } from './ports.js';
 import { createIntakeRoutes } from './routes.js';
+import { Pricing, Usage } from '../lib/cost.js';
+import { ONBOARDING_CONFIG } from '../agents/onboarding/config.js';
+
+const NO_PRICING = Pricing.parse({ version: 1, asOf: '2026-10-01', currency: 'USD', models: {} });
+const AGENT_PRICING = Pricing.parse({
+  version: 1,
+  asOf: '2026-10-01',
+  currency: 'USD',
+  models: { [ONBOARDING_CONFIG.model]: { inputPerMTok: 1, outputPerMTok: 5 } },
+});
 
 type Rec = Record<string, unknown>;
 const must = <T>(v: T | undefined): T => {
@@ -311,6 +321,8 @@ function makeWorld(script: Rec[], o: WorldOpts = {}) {
     approvals: itemWriter,
     approvalReader: approvals,
     audit: sink,
+    auditReader: new InMemoryAuditReader(inner),
+    pricing: AGENT_PRICING, // spec agent-metrics AT-7: the onboarding model is priced
     clock,
     idGen,
     classify,
@@ -370,6 +382,8 @@ function makeWorld(script: Rec[], o: WorldOpts = {}) {
       approvals: { insert: unused('approvals.insert'), remove: unused('approvals.remove') },
       messages: { recordMessage: unused('messages.recordMessage') },
       audit: sink,
+      auditReader: new InMemoryAuditReader(inner),
+      pricing: NO_PRICING, // nothing priced, so usage is null (spec agent-metrics, rule 9)
       clock,
       idGen,
       idempotency: {
@@ -765,5 +779,18 @@ describe('onboarding AT-35: deterministic dispatch and synthetic fixtures', () =
       expect(e.id).toMatch(/^emp-\d{3}$/);
       expect(e.email).toMatch(/\.(example|test)$/);
     }
+  });
+});
+
+describe('agent-metrics AT-7: the onboarding_checklist intake event carries a Usage', () => {
+  it('AT-7: onboarding_checklist has a usage key whose value is a Usage', async () => {
+    const w = makeWorld(S0());
+    const { send } = await boot(w);
+    expect((await send('emp-001')).status).toBe(200);
+    const events = w.sink.events.filter((e) => e.payload.kind === 'intake_outcome');
+    expect(events).toHaveLength(1);
+    const payload = events[0]?.payload ?? {};
+    expect(payload.outcome).toBe('onboarding_checklist');
+    expect(Usage.safeParse(payload.usage).success).toBe(true);
   });
 });

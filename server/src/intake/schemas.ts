@@ -17,6 +17,7 @@ import {
   OnboardingVerdict,
   Role,
 } from '../domain/schemas.js';
+import { Usage } from '../lib/cost.js';
 
 // ---- POST /messages body (rule 3, D-11) ----
 export const IDEMPOTENCY_KEY = /^[A-Za-z0-9_-]{1,128}$/;
@@ -180,6 +181,9 @@ export const IntakePayload = z
     checklistId: Id.optional(),
     pendingDeviations: z.number().int().nonnegative().optional(),
     injectionSuspected: z.boolean(),
+    // spec agent-metrics, rule 5: the request's totals, set by code; absent only on older events
+    usage: Usage.nullable().optional(),
+    internalError: z.literal(true).optional(), // set only by tryAudit: a 500 (agent-metrics D-5)
   })
   .strict(); // no user text, reply text or reason
 export type IntakePayload = z.infer<typeof IntakePayload>;

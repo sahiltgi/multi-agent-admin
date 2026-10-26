@@ -8,6 +8,7 @@ import { MAX_USER_TEXT_CHARS } from '../agents/schemas.js';
 import { QaVerdict, SectionId } from '../domain/qa.js';
 import { Id, IsoDateTime, LeaveVerdict, OnboardingVerdict, Role } from '../domain/schemas.js';
 import { DispatchEscalation, FailedRule, MyRequestView } from '../intake/schemas.js';
+import { Usage } from '../lib/cost.js';
 
 // ---- POST /chat body (rule 3) ----
 export const ChatBody = z
@@ -192,6 +193,8 @@ export const ChatTurnPayload = z
     checklistId: Id.optional(),
     pendingDeviations: z.number().int().nonnegative().optional(),
     injectionSuspected: z.boolean(), // OR over every agent run in the turn
+    // spec agent-metrics, rule 5: the request's totals, set by code; absent only on older events
+    usage: Usage.nullable().optional(),
   })
   .strict(); // no user text, reply, draft, question or reason
 export type ChatTurnPayload = z.infer<typeof ChatTurnPayload>;

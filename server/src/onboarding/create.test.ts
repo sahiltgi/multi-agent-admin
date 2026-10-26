@@ -40,6 +40,9 @@ import { fixtures } from '../seeds/fixtures.js';
 import { InMemoryOnboardingStore } from './in-memory.js';
 import { createOnboardingRoutes } from './routes.js';
 import { CreateOnboardingResponse } from './schemas.js';
+import { Pricing } from '../lib/cost.js';
+
+const NO_PRICING = Pricing.parse({ version: 1, asOf: '2026-10-01', currency: 'USD', models: {} });
 
 type Rec = Record<string, unknown>;
 interface Opts {
@@ -383,6 +386,8 @@ function makeWorld(o: WorldOpts = {}) {
     approvals,
     messages,
     audit: sink,
+    auditReader: new InMemoryAuditReader(inner),
+    pricing: NO_PRICING, // spec agent-metrics: nothing priced; a no-notes create has no model call
     clock,
     idGen,
     idempotency,
@@ -649,6 +654,7 @@ describe('onboarding-api AT-4: create writes the audited events in order', () =>
       agentRan: false,
       actorRole: 'hr_admin',
       source: 'api',
+      usage: { tokens: { input: 0, output: 0 }, costUsd: 0 }, // spec agent-metrics, rule 7 (AT-11)
     });
     for (const e of w.sink.events) expect(e.traceId).toBe(requestId);
   });

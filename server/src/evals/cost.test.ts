@@ -1,5 +1,5 @@
 // specs/eval-runner.md AT-28 (rule 24; D-20, D-21): tokens and cost per case and per agent.
-// The pure part tests priceCase(events, pricing) from the new module ./cost.js; the runner part
+// The pure part tests priceEvents(events, pricing) from the new module ./cost.js; the runner part
 // runs a leave case through runEvals with a scripted fake model and a temp pricing.yaml.
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -9,20 +9,27 @@ import { LEAVE_CONFIG } from '../agents/leave/config.js';
 import { ONBOARDING_CONFIG } from '../agents/onboarding/config.js';
 import { ORCHESTRATOR_CONFIG } from '../agents/orchestrator/config.js';
 import { POLICY_QA_CONFIG } from '../agents/policy_qa/config.js';
-import { priceCase } from './cost.js';
+import { priceEvents } from '../lib/cost.js';
+import { loadBootFiles } from '../server/boot.js';
 import { runEvals, type EvalOutcome } from './run.js';
 import { Pricing } from './schemas.js';
 
-// Pass-through spy: the real priceCase runs unless a test makes it throw once.
-vi.mock('./cost.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./cost.js')>();
-  return { ...actual, priceCase: vi.fn(actual.priceCase) };
+// Pass-through spy: the real priceEvents runs unless a test makes it throw once.
+vi.mock('../lib/cost.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/cost.js')>();
+  return { ...actual, priceEvents: vi.fn(actual.priceEvents) };
+});
+
+// spec agent-metrics AT-4: observe the pricing path the runner hands to loadBootFiles.
+vi.mock('../server/boot.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../server/boot.js')>();
+  return { ...actual, loadBootFiles: vi.fn(actual.loadBootFiles) };
 });
 
 type Rec = Record<string, unknown>;
 const AGENTS = ['orchestrator', 'leave', 'policy_qa', 'onboarding'] as const;
 
-// ---------- pure: priceCase ----------
+// ---------- pure: priceEvents ----------
 
 const modelCall = (model: string, tokens: { input: number; output: number } | null): Rec => ({
   eventType: 'agent_step',
@@ -39,7 +46,7 @@ const PRICES = Pricing.parse({
   },
 });
 
-describe('eval-runner AT-28: priceCase (pure)', () => {
+describe('eval-runner AT-28: priceEvents (pure)', () => {
   it('AT-28: model_call events sum into tokens and cost (150/30 at 3/15 is 0.0009)', () => {
     const pricing = Pricing.parse({
       version: 1,
@@ -47,7 +54,7 @@ describe('eval-runner AT-28: priceCase (pure)', () => {
       currency: 'USD',
       models: { [LEAVE_CONFIG.model]: { inputPerMTok: 3, outputPerMTok: 15 } },
     });
-    const r = priceCase(
+    const r = priceEvents(
       [
         modelCall(LEAVE_CONFIG.model, { input: 100, output: 20 }),
         modelCall(LEAVE_CONFIG.model, { input: 50, output: 10 }),
@@ -59,7 +66,7 @@ describe('eval-runner AT-28: priceCase (pure)', () => {
   });
 
   it('AT-28: each event is priced at its own model, so orchestrator and policy_qa events price differently (D-21)', () => {
-    const r = priceCase(
+    const r = priceEvents(
       [
         modelCall(ORCHESTRATOR_CONFIG.model, { input: 100, output: 10 }),
         modelCall(POLICY_QA_CONFIG.model, { input: 200, output: 20 }),
@@ -72,7 +79,7 @@ describe('eval-runner AT-28: priceCase (pure)', () => {
   });
 
   it('AT-28: an event with null tokens, and events that are not model calls, add 0', () => {
-    const r = priceCase(
+    const r = priceEvents(
       [
         modelCall(POLICY_QA_CONFIG.model, null),
         modelCall(POLICY_QA_CONFIG.model, { input: 10, output: 2 }),
@@ -85,7 +92,7 @@ describe('eval-runner AT-28: priceCase (pure)', () => {
   });
 
   it('AT-28: the Q&A agent qa_model_call events count too, priced at their own model', () => {
-    const r = priceCase(
+    const r = priceEvents(
       [
         modelCall(ORCHESTRATOR_CONFIG.model, { input: 100, output: 10 }),
         {
@@ -104,12 +111,12 @@ describe('eval-runner AT-28: priceCase (pure)', () => {
   });
 
   it('AT-28: no events give 0/0 tokens and cost 0', () => {
-    expect(priceCase([], PRICES)).toEqual({ tokens: { input: 0, output: 0 }, costUsd: 0 });
+    expect(priceEvents([], PRICES)).toEqual({ tokens: { input: 0, output: 0 }, costUsd: 0 });
   });
 
   it('AT-28: a model_call whose model has no pricing entry throws, never priced at 0', () => {
     expect(() =>
-      priceCase([modelCall('claude-unpriced-0', { input: 1, output: 1 })], PRICES),
+      priceEvents([modelCall('claude-unpriced-0', { input: 1, output: 1 })], PRICES),
     ).toThrow();
   });
 
@@ -120,7 +127,7 @@ describe('eval-runner AT-28: priceCase (pure)', () => {
       currency: 'USD',
       models: { [LEAVE_CONFIG.model]: { inputPerMTok: 0, outputPerMTok: 0 } },
     });
-    const r = priceCase([modelCall(LEAVE_CONFIG.model, { input: 5, output: 5 })], zero);
+    const r = priceEvents([modelCall(LEAVE_CONFIG.model, { input: 5, output: 5 })], zero);
     expect(r).toEqual({ tokens: { input: 5, output: 5 }, costUsd: 0 });
   });
 });
@@ -202,11 +209,15 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-function writeDir(leave: Rec[], leaveThreshold: Rec = { categories: {} }): void {
+function writeDir(
+  leave: Rec[],
+  leaveThreshold: Rec = { categories: {} },
+  policyQa: Rec[] = [FILLERS.policy_qa ?? {}],
+): void {
   const files: Record<(typeof AGENTS)[number], Rec[]> = {
     orchestrator: [FILLERS.orchestrator ?? {}],
     leave,
-    policy_qa: [FILLERS.policy_qa ?? {}],
+    policy_qa: policyQa,
     onboarding: [FILLERS.onboarding ?? {}],
   };
   for (const agent of AGENTS) {
@@ -324,7 +335,7 @@ describe('eval-runner AT-28: tokens and cost in a run', () => {
 
   it('AT-28: a model_call whose model has no pricing entry makes that case error / run_failed, never passed', async () => {
     writeDir([leaveCase('EV-1'), leaveCase('EV-2')]);
-    vi.mocked(priceCase).mockImplementationOnce(() => {
+    vi.mocked(priceEvents).mockImplementationOnce(() => {
       throw new Error('no pricing entry');
     });
     const outcome = await run([
@@ -351,5 +362,52 @@ describe('eval-runner AT-28: tokens and cost in a run', () => {
     expect(leave.summary.costUsd).toBeGreaterThan(1000);
     expect(leave.thresholdsMet).toBe(true);
     expect(outcome.exitCode).toBe(0);
+  });
+});
+
+// ---------- spec agent-metrics AT-3, AT-4 ----------
+
+const routeTurn = (label: string, u: ReturnType<typeof usage>): Rec => ({
+  content: [{ type: 'tool_use', id: 'tu-r', name: 'route', input: { label } }],
+  stop_reason: 'tool_use',
+  usage: u,
+});
+const doneTurn = (u: ReturnType<typeof usage>): Rec => ({
+  content: [{ type: 'text', text: 'routed' }],
+  stop_reason: 'end_turn',
+  usage: u,
+});
+
+describe('agent-metrics AT-3, AT-4: the runner and the per-request usage', () => {
+  it('AT-4: the runner passes join(evalsDir, pricing.yaml) to loadBootFiles as pricingPath', async () => {
+    writeDir([leaveCase('EV-1', { tags: ['instrumented'] })]);
+    vi.mocked(loadBootFiles).mockClear();
+    await run([]);
+    expect(vi.mocked(loadBootFiles)).toHaveBeenCalledTimes(1);
+    const paths = vi.mocked(loadBootFiles).mock.calls[0]?.[1];
+    expect(paths?.pricingPath).toBe(join(dir, 'pricing.yaml'));
+  });
+
+  it('AT-3: a policy_qa case driven through the app counts its model calls once, not the summary usage', async () => {
+    // The orchestrator routes the case out of scope: two orchestrator calls (40/4, then 10/1), and
+    // the app's chat_turn summary event carries usage 50/5 for the same trace.
+    writeDir([leaveCase('EV-1', { tags: ['instrumented'] })], { categories: {} }, [
+      {
+        id: 'EV-901',
+        category: 'citation',
+        actor: ACTOR,
+        endpoint: 'chat',
+        userText: 'How many days of annual leave do I get?',
+        expected: { outcome: 'policy_answer' },
+        tags: [],
+        notes: 'n',
+      },
+    ]);
+    const outcome = await run([routeTurn('out_of_scope', usage(40, 4)), doneTurn(usage(10, 1))]);
+    const qa = outcome.runs.find((x) => x.agent === 'policy_qa');
+    const c = qa?.cases.find((x) => x.id === 'EV-901');
+    expect(c?.tokens).toEqual({ input: 50, output: 5 });
+    // orchestrator priced at 1 / 5 per MTok in writeDir
+    expect(Math.abs((c?.costUsd ?? 1) - (50 * 1 + 5 * 5) / 1e6)).toBeLessThan(1e-12);
   });
 });

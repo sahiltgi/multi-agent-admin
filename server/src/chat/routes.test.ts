@@ -41,6 +41,9 @@ import { InMemoryOnboardingStore } from '../onboarding/in-memory.js';
 import { fixtures } from '../seeds/fixtures.js';
 import { ChatResponse, type Conversation } from './schemas.js';
 import type { ConversationStore } from './ports.js';
+import { Pricing } from '../lib/cost.js';
+
+const NO_PRICING = Pricing.parse({ version: 1, asOf: '2026-10-01', currency: 'USD', models: {} });
 
 type Rec = Record<string, unknown>;
 interface Opts {
@@ -583,6 +586,8 @@ async function makeWorld(o: WorldOpts = {}) {
     approvals: itemWrap,
     approvalReader: approvals,
     audit: sink,
+    auditReader: new InMemoryAuditReader(inner),
+    pricing: NO_PRICING, // nothing priced, so usage is null (spec agent-metrics, rule 9)
     clock,
     idGen,
     classify,

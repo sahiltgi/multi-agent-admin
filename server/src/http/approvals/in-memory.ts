@@ -3,6 +3,7 @@
 import type { InMemoryAuditSink } from '../../agents/audit.js';
 import type { OnboardingDirectory, OnboardingStore } from '../../domain/onboarding.js';
 import type { PolicyQuestionStore } from '../../domain/qa.js';
+import type { AuditSummaryReader, SummaryKind } from '../../metrics/ports.js';
 import type {
   ApprovalItem,
   ApprovalStatus,
@@ -118,8 +119,23 @@ export class InMemorySubjectResolver implements SubjectResolver {
   }
 }
 
-export class InMemoryAuditReader implements AuditReader {
+export class InMemoryAuditReader implements AuditReader, AuditSummaryReader {
   constructor(private readonly sink: InMemoryAuditSink) {}
+
+  /** spec agent-metrics, rule 15: `at` ascending; Array sort is stable, so ties keep write order. */
+  listByKinds(kinds: readonly SummaryKind[], from: string, to: string): Promise<AuditEvent[]> {
+    const wanted: ReadonlySet<unknown> = new Set(kinds);
+    const lo = Date.parse(from);
+    const hi = Date.parse(to);
+    return Promise.resolve(
+      this.sink.events
+        .filter(
+          (e) => wanted.has(e.payload.kind) && Date.parse(e.at) >= lo && Date.parse(e.at) <= hi,
+        )
+        .sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
+        .map((e) => structuredClone(e)),
+    );
+  }
 
   listByTrace(traceId: string): Promise<AuditEvent[]> {
     return Promise.resolve(

@@ -99,6 +99,7 @@ function makeWorld(
     write: (e: AuditEvent) =>
       opts.failAudit === true ? Promise.reject(new Error('audit store down')) : sink.write(e),
     listByTrace: (traceId: string) => reader.listByTrace(traceId),
+    listByKinds: (kinds, from, to) => reader.listByKinds(kinds, from, to),
   };
   const stores: ServerStores = {
     directory: new InMemoryEmployeeDirectory(fixtures.employees),
@@ -243,6 +244,7 @@ describe('buildApp', () => {
         'GET /onboarding',
         'GET /onboarding/:checklistId',
         'PATCH /onboarding/:checklistId/tasks/:taskId',
+        'GET /metrics/agents', // spec agent-metrics, rule 12
       ].sort(),
     );
   });
