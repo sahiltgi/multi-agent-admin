@@ -26,6 +26,7 @@ type Handler = (call: Call) => Response | Promise<Response>;
 
 const calls: Call[] = [];
 let handler: Handler = () => json(200, {});
+const list: { override: Handler | null } = { override: null };
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -64,6 +65,11 @@ function installFetch(): void {
         signal: init?.signal ?? undefined,
       };
       calls.push(call);
+      // Employee-chat A-10: /chat sends GET /api/my-requests on mount, so every test that renders
+      // /chat stubs it with { requests: [] } unless it sets `list.override`.
+      if (call.method === 'GET' && call.url === '/api/my-requests') {
+        return list.override === null ? json(200, { requests: [] }) : list.override(call);
+      }
       return handler(call);
     }),
   );
@@ -310,12 +316,32 @@ function badgeOf(el: HTMLElement): HTMLElement | null {
 function parseBody(c: Call): unknown {
   return JSON.parse(must(c.body));
 }
+// Employee-chat A-10: fetch counts on /chat count only POST /api/chat calls.
+function postCalls(): Call[] {
+  return calls.filter((c) => c.method === 'POST' && c.url === '/api/chat');
+}
+async function waitPosts(n: number): Promise<void> {
+  await waitFor(() => {
+    expect(postCalls().length).toBeGreaterThanOrEqual(n);
+  });
+}
+// Employee-chat A-10: role queries on /chat are scoped to the chat panel, outside My requests.
+function inList(el: HTMLElement): boolean {
+  return screen.queryByRole('region', { name: 'My requests' })?.contains(el) ?? false;
+}
+async function findChatAlert(): Promise<HTMLElement> {
+  return waitFor(() => must(screen.queryAllByRole('alert').find((a) => !inList(a))));
+}
+async function findChatStatus(): Promise<HTMLElement> {
+  return waitFor(() => must(screen.queryAllByRole('status').find((a) => !inList(a))));
+}
 
 beforeEach(() => {
   localStorage.clear();
   calls.length = 0;
   currentPath = '';
   handler = defaultHandler;
+  list.override = null;
   installFetch();
 });
 afterEach(() => {
@@ -369,15 +395,35 @@ describe('shell and identity', () => {
       renderApp('/queue');
       await waitCalls(1);
       cleanup();
+      // Employee-chat A-2: the /chat leg also loads My requests and opens a handbook section.
+      const queueHandler = handler;
+      handler = (c) =>
+        c.url.startsWith('/api/handbook/sections/')
+          ? json(200, { id: 'HB-1.2', text: '### HB-1.2 Sick leave\nFictional text.\n' })
+          : c.method === 'POST' && c.url === '/api/chat'
+            ? json(
+                200,
+                chatBody({
+                  status: 'answered',
+                  reply: 'You get 10 sick days per year.',
+                  card: { kind: 'policy_answer', sectionIds: ['HB-1.2'] },
+                }),
+              )
+            : queueHandler(c);
       renderApp('/chat');
       await sendChat(user, 'Annual leave please');
-      await waitCalls(2);
+      await user.click(await screen.findByRole('button', { name: 'HB-1.2' }));
+      await waitFor(() => {
+        expect(calls.some((c) => c.url === '/api/handbook/sections/HB-1.2')).toBe(true);
+      });
+      expect(calls.some((c) => c.method === 'GET' && c.url === '/api/my-requests')).toBe(true);
       cleanup();
+      handler = queueHandler;
       renderApp('/audit');
       await loadAudit(user, 'lr-101');
-      await waitCalls(3);
+      await waitCalls(5);
       cleanup();
-      expect(calls.length).toBeGreaterThanOrEqual(3);
+      expect(calls.length).toBeGreaterThanOrEqual(5);
       for (const c of calls) {
         expect(c.headers['x-demo-user']).toBe(IDS[key]);
         expect(Object.keys(c.headers).sort()).toEqual(
@@ -496,7 +542,7 @@ describe('persona switching', () => {
     expect(bodyText().includes('ai-002')).toBe(true);
   });
 
-  it('AT-8: switching on /chat clears turns, sends nothing, and the next send has no conversationId', async () => {
+  it('AT-8: switching on /chat clears turns, makes one GET /api/my-requests as emp-001 and no POST, and the next send has no conversationId', async () => {
     const user = userEvent.setup();
     renderApp('/chat');
     await sendChat(user, 'Hello there');
@@ -508,10 +554,18 @@ describe('persona switching', () => {
     });
     expect(bodyText().includes('Synthetic reply one.')).toBe(false);
     expect(screen.getByText(CHAT_IDLE)).not.toBeNull();
-    expect(calls.length).toBe(before);
-    await sendChat(user, 'Second after switch');
+    // Employee-chat A-3: the switch makes exactly one fetch, the new persona's My requests GET.
     await waitCalls(before + 1);
-    const c = must(calls[before]);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls.length).toBe(before + 1);
+    const sw = must(calls[before]);
+    expect(sw.method).toBe('GET');
+    expect(sw.url).toBe('/api/my-requests');
+    expect(sw.headers['x-demo-user']).toBe('emp-001');
+    expect(calls.slice(before).some((x) => x.method === 'POST')).toBe(false);
+    await sendChat(user, 'Second after switch');
+    await waitCalls(before + 2);
+    const c = must(calls[before + 1]);
     expect(c.headers['x-demo-user']).toBe('emp-001');
     expect(parseBody(c)).toEqual({ message: 'Second after switch' });
   });
@@ -551,12 +605,15 @@ describe('persona switching', () => {
     renderApp('/audit');
     await loadAudit(user, 'lr-101');
     await screen.findByText('gate_result');
-    const before = calls.length;
+    // Employee-chat A-10: visiting /chat now sends GET /api/my-requests, so this count covers
+    // /api/audit calls only.
+    const auditCalls = (): number => calls.filter((c) => c.url.startsWith('/api/audit')).length;
+    const before = auditCalls();
     await user.click(screen.getByRole('link', { name: 'Chat' }));
     await user.click(screen.getByRole('link', { name: 'Audit' }));
     expect(screen.getByText(AUDIT_IDLE)).not.toBeNull();
     await new Promise((r) => setTimeout(r, 30));
-    expect(calls.length).toBe(before);
+    expect(auditCalls()).toBe(before);
   });
 
   it('AT-9: clicking the active Audit tab, then switching persona, still re-sends the last id', async () => {
@@ -720,7 +777,8 @@ describe('http boundary', () => {
       handler = make;
       const { container } = renderApp(path);
       await drive(user);
-      const alert = await screen.findByRole('alert');
+      // Employee-chat A-10: on /chat the alert is the chat panel's, never the My requests region's.
+      const alert = path === '/chat' ? await findChatAlert() : await screen.findByRole('alert');
       expect(alert.textContent).toContain(text);
       for (const leak of leaks) expect(bodyText().includes(leak)).toBe(false);
       expect(container.querySelector('html')).toBeNull();
@@ -816,7 +874,10 @@ describe('verdicts and text', () => {
       await screen.findByText(reply);
       expect(container.querySelector('img')).toBeNull();
       expect(container.textContent).toContain(reply);
-      expect(container.querySelector('[data-tone]')).toBeNull();
+      // Employee-chat A-10: the only toned element is the turn's status pill, with the status as sent.
+      const toned = container.querySelectorAll('[data-tone]');
+      expect(toned).toHaveLength(1);
+      expect(must(toned[0]).textContent).toBe('reply');
       cleanup();
     }
 
@@ -865,7 +926,7 @@ describe('chat input and states', () => {
         await user.click(sendButton());
         box().focus();
         await user.keyboard('{Enter}');
-        expect(calls).toHaveLength(0);
+        expect(postCalls()).toHaveLength(0);
       }
     }
   });
@@ -878,8 +939,8 @@ describe('chat input and states', () => {
     const x = 'x'.repeat(MAX_USER_TEXT_CHARS);
     fireEvent.change(box(), { target: { value: '  ' + x + '  ' } });
     await user.click(sendButton());
-    await waitCalls(1);
-    expect(parseBody(must(calls[0]))).toEqual({ message: x });
+    await waitPosts(1);
+    expect(parseBody(must(postCalls()[0]))).toEqual({ message: x });
     expect(sendButton().disabled).toBe(true);
     pending.resolve(json(200, chatBody()));
     await screen.findByText('Synthetic reply one.');
@@ -890,7 +951,7 @@ describe('chat input and states', () => {
     handler = () => errorBody(400, 'invalid_request', 'The request is invalid.');
     renderApp('/chat');
     await sendChat(user, 'Annual leave please');
-    const alert = await screen.findByRole('alert');
+    const alert = await findChatAlert();
     expect(alert.textContent).toContain('The request is invalid.');
     expect(alert.textContent).toContain('invalid_request');
     expect(box().value).toBe('Annual leave please');
@@ -918,9 +979,19 @@ describe('chat input and states', () => {
     renderApp('/chat');
     expect(screen.getByText(CHAT_IDLE)).not.toBeNull();
     await sendChat(user, 'Hello there');
-    expect(within(await screen.findByRole('status')).getByText('Loading…')).not.toBeNull();
+    expect(within(await findChatStatus()).getByText('Loading…')).not.toBeNull();
     sendPending.resolve(json(200, chatBody()));
     await screen.findByText('Synthetic reply one.');
+    cleanup();
+
+    // Employee-chat A-4: My requests has its own Loading and empty states.
+    const listPending = deferred();
+    list.override = () => listPending.promise;
+    renderApp('/chat');
+    const region = await screen.findByRole('region', { name: 'My requests' });
+    expect(within(region).getByRole('status').textContent).toBe('Loading…');
+    listPending.resolve(json(200, { requests: [] }));
+    await within(region).findByText('You have no leave requests yet.');
   });
 });
 
@@ -932,13 +1003,21 @@ describe('routes', () => {
     const { container } = renderApp('/chat');
     await sendChat(user, 'Annual leave 2026-11-16 to 2026-11-17');
     await screen.findByText('Which leave type would you like?');
-    expect(calls).toHaveLength(1);
-    const c = must(calls[0]);
+    // Employee-chat A-5: exactly one POST /api/chat; a 'question' response triggers no My requests GET.
+    expect(postCalls()).toHaveLength(1);
+    expect(calls.filter((x) => x.method === 'GET' && x.url === '/api/my-requests')).toHaveLength(1);
+    const c = must(postCalls()[0]);
     expect(c.method).toBe('POST');
     expect(c.url).toBe('/api/chat');
     expect(JSON.parse(must(c.body))).toEqual({ message: 'Annual leave 2026-11-16 to 2026-11-17' });
-    expect(screen.getByText('question', { exact: true }).children).toHaveLength(0);
-    expect(container.querySelector('[data-tone]')).toBeNull();
+    // Employee-chat A-5: status is a StatusPill with the same text; no VerdictBadge; no chips.
+    const pill = screen.getByText('question', { exact: true });
+    expect(pill.children).toHaveLength(0);
+    expect(pill.getAttribute('data-tone')).toBe('neutral');
+    expect(container.querySelectorAll('[data-tone]')).toHaveLength(1);
+    expect(screen.queryAllByRole('button').some((b) => b.textContent.startsWith('HB-'))).toBe(
+      false,
+    );
     expect(box().value).toBe('');
   });
 
@@ -955,7 +1034,7 @@ describe('routes', () => {
       errorBody(409, 'conversation_full', 'This conversation is full. Please start a new one.');
     renderApp('/chat');
     await sendChat(user, 'Hello there');
-    expect((await screen.findByRole('alert')).textContent).toContain(
+    expect((await findChatAlert()).textContent).toContain(
       'This conversation is full. Please start a new one.',
     );
   });
@@ -981,7 +1060,7 @@ describe('routes', () => {
     await screen.findByText('Which leave type would you like?');
     await sendChat(user, '2026-11-16 to 2026-11-17, annual');
     await screen.findByText('Second reply text.');
-    expect(parseBody(must(calls[1]))).toEqual({
+    expect(parseBody(must(postCalls()[1]))).toEqual({
       message: '2026-11-16 to 2026-11-17, annual',
       conversationId: 'cv-001',
     });
@@ -996,10 +1075,10 @@ describe('routes', () => {
     expect([...order].sort((a, b) => a - b)).toEqual(order);
 
     await sendChat(user, 'Third message');
-    await screen.findByRole('alert');
+    await findChatAlert();
     await sendChat(user, 'Fourth message');
     await screen.findByText('Fourth reply text.');
-    expect(parseBody(must(calls[3]))).toEqual({
+    expect(parseBody(must(postCalls()[3]))).toEqual({
       message: 'Fourth message',
       conversationId: 'cv-001',
     });
@@ -1016,7 +1095,7 @@ describe('routes', () => {
     expect(bodyText().includes('Second reply text.')).toBe(false);
     await sendChat(user, 'After reload');
     await screen.findByText('After reload reply.');
-    expect(parseBody(must(calls[4]))).toEqual({ message: 'After reload' });
+    expect(parseBody(must(postCalls()[4]))).toEqual({ message: 'After reload' });
   });
 
   it('AT-23: queue rows keep order, show only the allowed fields, and never render untrusted canaries', async () => {

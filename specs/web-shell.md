@@ -421,6 +421,17 @@ Owner decisions made on 2026-10-26. They are settled.
 - **D-5 (step 8 waiver):** The new-feature skill's check that `server/src/` shows a non-test change is waived by the owner, because this feature is web/shared only.
 - **D-6 (in-scope locations for code):** `shared/`, `web/`, and the root configs `package.json` (workspaces), `tsconfig.json` (references), `vitest.config.ts` (a `shared` test project) and `eslint.config.js`. Docs: `docs/architecture.md`, and an "Amended by specs/web-shell.md (2026-10-26)" line about the facade in `specs/domain-schemas.md`, `specs/approval-queue.md`, `specs/chat-endpoint.md` and `specs/request-intake.md` (the last three per the OQ-3 answer).
 - **D-7 (dependencies):** `react-router` v7 for routing; `@testing-library/react` and `@testing-library/user-event` for tests (jsdom).
+- **Amended by specs/employee-chat.md (2026-10-26):** a sanctioned rescope, owner-approved under employee-chat OQ-3. Each item's full wording is in employee-chat rule 15.
+  - A-1: Non-goals. Clickable citations, "My requests" and `MyRequestsResponse` are now in scope for `/chat`. History across reloads stays out.
+  - A-2: the HTTP calls table and rule 2 gain `GET /my-requests` and `GET /handbook/sections/:id`, and AT-3 covers them.
+  - A-3: rule 4 and AT-8. A switch on `/chat` sends exactly one `GET /my-requests` and no `POST`.
+  - A-4: rule 12 and AT-21 gain the My requests loading and empty states.
+  - A-5: rule 13 and AT-22. Exactly one `POST` per send. The status renders in a `StatusPill`, and chips are the only other card field shown.
+  - A-6: rule 16 and AT-25. The facade adds `MyRequestsResponse`, `SectionId` and `HandbookSectionResponse`.
+  - A-7: AT-27's walker also visits `server/src/intake/schemas.ts`, `server/src/domain/handbook.ts` and `server/src/handbook/schemas.ts`.
+  - A-8: no D-5-style waiver. employee-chat changes `server/src/`.
+  - A-9: `docs/architecture.md` names employee-chat and `server/src/handbook/`.
+  - A-10: the `/chat` test harness (AT-9, AT-14, AT-17, AT-19, AT-20, AT-21, AT-22) stubs `GET /my-requests`, counts `POST /api/chat` only, scopes alerts and statuses to the chat panel, and expects the status pill.
 
 How this spec applies the decisions, not owner text: rule 16 adds `ErrorBody`, `ErrorCode` and `MAX_USER_TEXT_CHARS` to the facade (from default rules 8 and 11) and leaves out `MyRequestsResponse` (no route needs it). Rule 15 maps D-4's "kind" to `eventType`. Rule 18 lists `zod` as a web and shared dependency.
 

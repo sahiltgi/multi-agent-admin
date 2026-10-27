@@ -16,4 +16,7 @@ export {
   OnboardingVerdict,
   Role,
 } from '../../server/src/domain/schemas.js';
-export { QaVerdict } from '../../server/src/domain/qa.js';
+export { QaVerdict, SectionId } from '../../server/src/domain/qa.js';
+// spec employee-chat, rule 12: My requests and the handbook section view.
+export { MyRequestsResponse } from '../../server/src/intake/schemas.js';
+export { HandbookSectionResponse } from '../../server/src/handbook/schemas.js';

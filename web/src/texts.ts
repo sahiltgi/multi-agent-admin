@@ -12,4 +12,9 @@ export const TEXT = {
   invalidResponse: "The server sent a response this app couldn't read.",
   notFound: 'Page not found.',
   goToChat: 'Go to chat',
+  // spec employee-chat, "Fixed web texts"
+  myRequests: 'My requests',
+  myRequestsEmpty: 'You have no leave requests yet.',
+  close: 'Close',
+  noApprovalItem: 'No approval item',
 } as const;

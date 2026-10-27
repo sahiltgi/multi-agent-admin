@@ -4,7 +4,9 @@ import {
   ChatBody,
   ChatResponse,
   ErrorBody,
+  HandbookSectionResponse,
   ListApprovalsResponse,
+  MyRequestsResponse,
   TraceResponse,
 } from '@hr/shared';
 import { API_BASE } from './env.js';
@@ -86,4 +88,20 @@ export function getApprovals(opts: CallOptions): Promise<ApiResult<ListApprovals
 
 export function getTrace(requestId: string, opts: CallOptions): Promise<ApiResult<TraceResponse>> {
   return request(TraceResponse, `/audit/${encodeURIComponent(requestId)}`, opts);
+}
+
+// spec employee-chat, rule 11: no query string and no employeeId; the server scopes to the actor.
+export function getMyRequests(opts: CallOptions): Promise<ApiResult<MyRequestsResponse>> {
+  return request(MyRequestsResponse, '/my-requests', opts);
+}
+
+export function getHandbookSection(
+  sectionId: string,
+  opts: CallOptions,
+): Promise<ApiResult<HandbookSectionResponse>> {
+  return request(
+    HandbookSectionResponse,
+    `/handbook/sections/${encodeURIComponent(sectionId)}`,
+    opts,
+  );
 }

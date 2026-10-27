@@ -1,6 +1,6 @@
 // Verdict badge (spec web-shell, rule 9). Display only: the text is the server's verdict unchanged,
 // and the tone is an exact-string lookup, never a prefix or substring match.
-type Tone = 'neutral' | 'amber' | 'plum' | 'grey';
+export type Tone = 'neutral' | 'amber' | 'plum' | 'grey';
 
 const VERDICT_TONE: Readonly<Record<string, Tone>> = {
   ROUTE_TO_MANAGER: 'neutral',

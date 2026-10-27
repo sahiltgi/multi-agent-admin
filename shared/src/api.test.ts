@@ -1,6 +1,14 @@
 // Spec web-shell: AT-25 (facade is exact and re-export-only) and AT-27 (browser-safe import graph).
 // The walker below is test code: the spec lists no non-test file for it.
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -11,6 +19,8 @@ import * as chat from '../../server/src/chat/schemas.js';
 import * as domain from '../../server/src/domain/schemas.js';
 import * as qa from '../../server/src/domain/qa.js';
 import * as errors from '../../server/src/http/errors.js';
+import * as intake from '../../server/src/intake/schemas.js';
+import * as handbookSchemas from '../../server/src/handbook/schemas.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const API_TS = join(ROOT, 'shared', 'src', 'api.ts');
@@ -24,12 +34,15 @@ const EXPECTED_KEYS = [
   'ConversationView',
   'ErrorBody',
   'ErrorCode',
+  'HandbookSectionResponse',
   'LeaveVerdict',
   'ListApprovalsResponse',
   'MAX_USER_TEXT_CHARS',
+  'MyRequestsResponse',
   'OnboardingVerdict',
   'QaVerdict',
   'Role',
+  'SectionId',
   'TraceResponse',
 ];
 
@@ -120,7 +133,7 @@ function walkImports(entry: string): WalkResult {
 describe('facade exports (rule 16)', () => {
   it('AT-25: exports exactly the listed names, each identical to the server export', () => {
     expect(Object.keys(api).sort()).toEqual(EXPECTED_KEYS);
-    expect('MyRequestsResponse' in api).toBe(false);
+    expect('LeaveRequestStatus' in api).toBe(false);
     const sources: Record<string, Record<string, unknown>> = {
       ChatBody: chat,
       ChatResponse: chat,
@@ -137,6 +150,9 @@ describe('facade exports (rule 16)', () => {
       OnboardingVerdict: domain,
       Role: domain,
       QaVerdict: qa,
+      MyRequestsResponse: intake,
+      SectionId: qa,
+      HandbookSectionResponse: handbookSchemas,
     };
     const facade: Record<string, unknown> = { ...api };
     for (const name of EXPECTED_KEYS) expect(facade[name]).toBe(sources[name]?.[name]);
@@ -155,6 +171,62 @@ describe('facade exports (rule 16)', () => {
   });
 });
 
+function webCode(dir: string): string[] {
+  return readdirSync(dir).flatMap((name) => {
+    const p = join(dir, name);
+    if (statSync(p).isDirectory()) return name === 'node_modules' ? [] : webCode(p);
+    return /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name) ? [p] : [];
+  });
+}
+
+describe('employee-chat facade (rule 12)', () => {
+  it('AT-17: exports the exact A-6 list, identical to the server objects, and re-export only', () => {
+    expect(Object.keys(api).sort()).toEqual([
+      'ApprovalItemView',
+      'ApprovalKind',
+      'ApprovalStatus',
+      'ChatBody',
+      'ChatResponse',
+      'ConversationView',
+      'ErrorBody',
+      'ErrorCode',
+      'HandbookSectionResponse',
+      'LeaveVerdict',
+      'ListApprovalsResponse',
+      'MAX_USER_TEXT_CHARS',
+      'MyRequestsResponse',
+      'OnboardingVerdict',
+      'QaVerdict',
+      'Role',
+      'SectionId',
+      'TraceResponse',
+    ]);
+    expect(api.MyRequestsResponse).toBe(intake.MyRequestsResponse);
+    expect(api.SectionId).toBe(qa.SectionId);
+    expect(api.HandbookSectionResponse).toBe(handbookSchemas.HandbookSectionResponse);
+    const text = stripComments(readFileSync(API_TS, 'utf8'));
+    const rest = text
+      .replace(/export\s+(?:type\s+)?\{[^}]*\}\s*from\s*['"][^'"]+['"]\s*;?/g, '')
+      .trim();
+    expect(rest).toBe('');
+  });
+
+  it('AT-17: no non-test web file redeclares MyRequestsResponse or SectionId, or builds an HB- RegExp', () => {
+    const files = webCode(join(ROOT, 'web', 'src'));
+    expect(files.length).toBeGreaterThan(0);
+    const declaration = /\b(?:const|let|var|type|interface)\s+(?:MyRequestsResponse|SectionId)\b/;
+    for (const f of files) {
+      const text = readFileSync(f, 'utf8');
+      expect(declaration.test(text), `${f} redeclares a contract name`).toBe(false);
+      expect(
+        /\/[^/\n]*HB-[^/\n]*\/[gimsuy]*/.test(stripComments(text)),
+        `${f} RegExp literal`,
+      ).toBe(false);
+      expect(/new\s+RegExp\s*\([^)]*HB-/.test(text), `${f} new RegExp`).toBe(false);
+    }
+  });
+});
+
 describe('browser-safe import graph (rule 17)', () => {
   it('AT-27: the real graph from shared/src/api.ts has no violation and covers the server schemas', () => {
     expect(existsSync(API_TS)).toBe(true);
@@ -169,9 +241,30 @@ describe('browser-safe import graph (rule 17)', () => {
       'server/src/domain/schemas.ts',
       'server/src/domain/qa.ts',
       'server/src/lib/cost.ts',
+      'server/src/intake/schemas.ts',
+      'server/src/domain/handbook.ts',
+      'server/src/handbook/schemas.ts',
     ]) {
       expect(seen).toContain(must);
     }
+  });
+
+  it('AT-18: (employee-chat) the walker visits the new schemas, never routes.ts, and handbook helpers are not exported', () => {
+    const { visited, violations } = walkImports(API_TS);
+    expect(violations).toEqual([]);
+    const seen = [...visited].map((f) => relative(ROOT, f).split('\\').join('/'));
+    for (const f of [
+      'server/src/intake/schemas.ts',
+      'server/src/domain/qa.ts',
+      'server/src/domain/handbook.ts',
+      'server/src/handbook/schemas.ts',
+    ]) {
+      expect(seen).toContain(f);
+    }
+    expect(seen).not.toContain('server/src/handbook/routes.ts');
+    const keys = Object.keys(api);
+    expect(keys).not.toContain('handbookSections');
+    expect(keys).not.toContain('handbookBody');
   });
 
   it('AT-27: temporary fixtures that import node, express, mongoose, use process or import() are reported', () => {
