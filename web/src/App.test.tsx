@@ -187,6 +187,22 @@ function deviationView(id: string): Record<string, unknown> {
     },
   });
 }
+function approvableView(): Record<string, unknown> {
+  const v = itemView('ai-001', { subjectId: 'lr-101' });
+  return {
+    ...v,
+    subject: {
+      requestId: 'lr-101',
+      employeeId: 'emp-003',
+      leaveType: 'annual',
+      startDate: '2026-11-16',
+      endDate: '2026-11-17',
+      status: 'pending_approval',
+      workingDays: 2,
+    },
+    canAct: true,
+  };
+}
 function chatBody(over: Record<string, unknown> = {}): unknown {
   return ChatResponse.parse({
     reply: 'Synthetic reply one.',
@@ -294,24 +310,22 @@ function sendButton(): HTMLButtonElement {
   if (!(b instanceof HTMLButtonElement)) throw new Error('send is not a button');
   return b;
 }
-function rowFor(id: string, allIds: string[], root: HTMLElement): HTMLElement {
-  const all = [...root.querySelectorAll<HTMLElement>('*')];
-  const leaf = must(
-    all.find(
-      (e) =>
-        e.textContent.includes(id) && [...e.children].every((c) => !c.textContent.includes(id)),
-    ),
-  );
-  let row = leaf;
-  while (row.parentElement && row.parentElement !== root) {
-    const p = row.parentElement;
-    if (allIds.some((o) => o !== id && p.textContent.includes(o))) break;
-    row = p;
-  }
-  return row;
+// Amended by approval-queue-ui (W-5, W-6): queue rows are cards, one article named by item id.
+function cardFor(id: string): HTMLElement {
+  return screen.getByRole('article', { name: id });
 }
 function badgeOf(el: HTMLElement): HTMLElement | null {
-  return el.querySelector<HTMLElement>('[data-tone]');
+  return el.querySelector<HTMLElement>('.badge');
+}
+function pillOf(el: HTMLElement): HTMLElement | null {
+  return el.querySelector<HTMLElement>('.pill');
+}
+async function openHrTab(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  await user.click(await screen.findByRole('tab', { name: 'Escalations and onboarding' }));
+}
+function articleNames(): string[] {
+  // The item id is the first thing in each card (approval-queue-ui rule 3), so the first ai-NNN is its id.
+  return screen.getAllByRole('article').map((a) => /ai-\d{3}/.exec(a.textContent)?.[0] ?? '');
 }
 function parseBody(c: Call): unknown {
   return JSON.parse(must(c.body));
@@ -392,8 +406,33 @@ describe('shell and identity', () => {
     for (const key of ['asha', 'ravi', 'meera'] as const) {
       calls.length = 0;
       setPersona(key);
+      // Amended by approval-queue-ui W-2: Ravi also approves ai-001 once.
+      const plainHandler = handler;
+      if (key === 'ravi') {
+        handler = (c) =>
+          c.method === 'POST' && c.url === '/api/approvals/ai-001/actions'
+            ? json(200, {
+                item: {
+                  ...must(approvableView().item as Record<string, unknown>),
+                  status: 'approved',
+                },
+                auditEventId: 'ae-001',
+              })
+            : c.method === 'GET' && c.url === '/api/approvals'
+              ? json(200, { items: [approvableView()] })
+              : plainHandler(c);
+      }
       renderApp('/queue');
       await waitCalls(1);
+      if (key === 'ravi') {
+        await user.click(await screen.findByRole('button', { name: 'Approve' }));
+        await waitFor(() => {
+          expect(
+            calls.some((c) => c.method === 'POST' && c.url === '/api/approvals/ai-001/actions'),
+          ).toBe(true);
+        });
+        handler = plainHandler;
+      }
       cleanup();
       // Employee-chat A-2: the /chat leg also loads My requests and opens a handbook section.
       const queueHandler = handler;
@@ -826,9 +865,9 @@ describe('verdicts and text', () => {
     expect(offenders).toHaveLength(0);
   });
 
-  it('AT-15: queue rows show verdict badge, policy version, status and No gate result as returned', async () => {
+  it('AT-15: queue cards show verdict badge, policy version, status and No gate result as returned', async () => {
+    const user = userEvent.setup();
     setPersona('ravi');
-    const ids = ['ai-001', 'ai-002', 'ai-003'];
     handler = () =>
       json(
         200,
@@ -841,23 +880,21 @@ describe('verdicts and text', () => {
           itemView('ai-003', { kind: 'escalation', subjectId: 'pq-001', gateResult: null }),
         ]),
       );
-    const { container } = renderApp('/queue');
-    await screen.findByText('ai-003');
-    const r1 = rowFor('ai-001', ids, container);
+    renderApp('/queue');
+    const r1 = await screen.findByRole('article', { name: 'ai-001' });
     expect(must(badgeOf(r1)).textContent).toBe('ROUTE_TO_MANAGER');
     expect(must(badgeOf(r1)).getAttribute('data-tone')).toBe('neutral');
     expect(r1.textContent).toContain('v1');
-    const r2 = rowFor('ai-002', ids, container);
+    const r2 = cardFor('ai-002');
     expect(must(badgeOf(r2)).textContent).toBe('ROUTE_TO_MANAGER_WITH_FLAGS');
-    const r3 = rowFor('ai-003', ids, container);
+    // Amended by approval-queue-ui W-5: the ai-003 assertions run on the second tab.
+    await openHrTab(user);
+    const r3 = cardFor('ai-003');
     expect(r3.textContent).toContain('No gate result');
     expect(badgeOf(r3)).toBeNull();
-    for (const r of [r1, r2, r3]) {
-      const leaves = [...r.querySelectorAll<HTMLElement>('*')].filter(
-        (e) => e.children.length === 0,
-      );
-      expect(leaves.some((e) => e.textContent === 'open')).toBe(true);
-    }
+    expect(r3.querySelectorAll('[data-tone]')).toHaveLength(1);
+    expect(r3.querySelector('[data-tone]')).toBe(pillOf(r3));
+    for (const r of [r1, r2, r3]) expect(must(pillOf(r)).textContent).toBe('open');
   });
 
   it('AT-17: markup and instruction text renders literally and nothing is created or called', async () => {
@@ -1098,9 +1135,9 @@ describe('routes', () => {
     expect(parseBody(must(postCalls()[4]))).toEqual({ message: 'After reload' });
   });
 
-  it('AT-23: queue rows keep order, show only the allowed fields, and never render untrusted canaries', async () => {
+  it('AT-23: queue cards keep order per tab, show only the allowed fields, and never render untrusted canaries', async () => {
+    const user = userEvent.setup();
     setPersona('meera');
-    const ids = ['ai-003', 'ai-005', 'ai-001'];
     handler = () =>
       json(
         200,
@@ -1119,46 +1156,47 @@ describe('routes', () => {
           }),
         ]),
       );
-    const { container } = renderApp('/queue');
-    await screen.findByText('ai-001');
-    const text = bodyText();
-    const pos = ids.map((i) => text.indexOf(i));
-    expect(pos.every((p) => p >= 0)).toBe(true);
-    expect([...pos].sort((a, b) => a - b)).toEqual(pos);
-
-    const esc = rowFor('ai-003', ids, container);
-    for (const s of ['escalation', 'open', 'pq-001', 'qa-v1']) expect(esc.textContent).toContain(s);
+    renderApp('/queue');
+    await screen.findByRole('article', { name: 'ai-001' });
+    // Amended by approval-queue-ui W-6: the order check is per tab.
+    expect(articleNames()).toEqual(['ai-001']);
+    const rej = cardFor('ai-001');
+    expect(must(pillOf(rej)).textContent).toBe('rejected');
+    await openHrTab(user);
+    expect(articleNames()).toEqual(['ai-003', 'ai-005']);
+    const esc = cardFor('ai-003');
+    for (const s of ['open', 'qa-v1']) expect(esc.textContent).toContain(s);
     expect(must(badgeOf(esc)).textContent).toBe('ESCALATE_TO_HR');
     expect(must(badgeOf(esc)).getAttribute('data-tone')).toBe('plum');
-    const dev = rowFor('ai-005', ids, container);
-    for (const s of ['onboarding_deviation', 'open', 'dv-001', 'ob-v1']) {
-      expect(dev.textContent).toContain(s);
-    }
+    const dev = cardFor('ai-005');
+    for (const s of ['open', 'ob-v1']) expect(dev.textContent).toContain(s);
     expect(must(badgeOf(dev)).textContent).toBe('MANAGER');
     expect(must(badgeOf(dev)).getAttribute('data-tone')).toBe('amber');
-    const rej = rowFor('ai-001', ids, container);
-    for (const s of ['leave_request', 'rejected', 'lr-101']) expect(rej.textContent).toContain(s);
 
-    for (const canary of [
-      'QUESTION-CANARY',
-      'DRAFT-CANARY',
-      'RATIONALE-CANARY',
-      'COMMENT-CANARY',
-      'REASON-CANARY',
-      'QA-REASON-CANARY',
-    ]) {
+    const text = bodyText();
+    // QUESTION, DRAFT and RATIONALE now appear literally, as text.
+    for (const shown of ['QUESTION-CANARY', 'DRAFT-CANARY', 'RATIONALE-CANARY']) {
+      expect(text.includes(shown)).toBe(true);
+    }
+    for (const canary of ['COMMENT-CANARY', 'REASON-CANARY', 'QA-REASON-CANARY']) {
       expect(text.includes(canary)).toBe(false);
     }
     expect(must(calls[0]).url).toBe('/api/approvals');
   });
 
   it('AT-23: an escalation whose question.gateResult is null shows No gate result and no badge', async () => {
+    const user = userEvent.setup();
     setPersona('meera');
     handler = () => json(200, queueBody([escalationView('ai-004', null)]));
-    const { container } = renderApp('/queue');
-    await screen.findByText('ai-004');
-    expect(bodyText().includes('No gate result')).toBe(true);
-    expect(container.querySelector('[data-tone]')).toBeNull();
+    renderApp('/queue');
+    await openHrTab(user);
+    const card = await screen.findByRole('article', { name: 'ai-004' });
+    expect(card.textContent).toContain('No gate result');
+    // Amended by approval-queue-ui W-6: no .badge, and the only [data-tone] is the StatusPill.
+    expect(document.querySelector('.badge')).toBeNull();
+    const toned = [...document.querySelectorAll('[data-tone]')];
+    expect(toned).toHaveLength(1);
+    expect(toned[0]).toBe(pillOf(card));
   });
 
   it('AT-24: audit ids are trimmed and encoded, blank input is not loadable', async () => {

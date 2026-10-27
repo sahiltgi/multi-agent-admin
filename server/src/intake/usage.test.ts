@@ -131,6 +131,8 @@ function makeWorld(
     clock: { nowIso: () => NOW },
     idGen,
     onboarding: new InMemoryOnboardingStore(),
+    // Amended by approval-queue-ui Q-1: every ApprovalApiDeps carries a holiday reader.
+    holidays: { getHolidays: () => Promise.resolve([]) },
   };
   const intakeDeps = {
     directory,

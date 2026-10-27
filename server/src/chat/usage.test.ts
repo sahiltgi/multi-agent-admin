@@ -189,6 +189,8 @@ async function makeWorld(o: WorldOpts = {}) {
     clock,
     idGen,
     onboarding: onboardingStore,
+    // Amended by approval-queue-ui Q-1: every ApprovalApiDeps carries a holiday reader.
+    holidays: { getHolidays: () => Promise.resolve([]) },
   };
   const intake = {
     directory,

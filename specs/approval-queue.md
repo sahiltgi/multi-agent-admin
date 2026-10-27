@@ -464,6 +464,11 @@ Category: `routing | extraction | verdict | citation | injection`. These categor
 
 - **Amended by specs/web-shell.md (2026-10-26):** "Shared schemas go in `shared/` when web first imports them" (Inputs and outputs) is replaced by a facade. The `shared/` workspace (`@hr/shared`) is a thin facade: `shared/src/api.ts` only re-exports the HTTP contract schemas from `server/src/`, so no schema moves out of the server and the web never redeclares one. A test keeps the facade's import graph zod-only (web-shell rules 16–17, D-2, D-3).
 
+- **Amended by specs/approval-queue-ui.md (2026-10-27):** a sanctioned rescope, owner-approved under approval-queue-ui OQ-6.
+  - Q-1: Inputs and outputs. `LeaveSubjectView` gains `workingDays` (a required, nullable number computed at read time) and `ApprovalApiDeps` gains `holidays: HolidayReader`. Every `createApp` caller passes `holidays`.
+  - Q-2: Edge cases ("Half days", "Weekends and holidays"). The views now carry the server-computed `workingDays`; actions still apply no working-day logic.
+  - Q-3: AT-7 and AT-8. Fixture subject views include `workingDays`, and AT-8's deep-equal includes it. AT-6 (no gate import under `server/src/http/`) is unchanged.
+
 ## Open questions
 
 Answered by the owner on 2026-10-15 (accepted the proposed defaults). Each answer is written into the rules and ATs it touched.

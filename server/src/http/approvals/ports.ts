@@ -55,6 +55,14 @@ export interface AuditReader {
   listByTrace(traceId: string): Promise<AuditEvent[]>;
 }
 
+/**
+ * Holidays for a date range, both ends inclusive (spec approval-queue-ui, rule 17). Same shape as
+ * the Leave Agent's getHolidays, so the Mongo leave-data adapter fits. Callers parse the result.
+ */
+export interface HolidayReader {
+  getHolidays(range: { from: string; to: string }): Promise<unknown>;
+}
+
 export interface ApprovalApiDeps {
   directory: EmployeeDirectory;
   approvals: ApprovalStore;
@@ -65,6 +73,8 @@ export interface ApprovalApiDeps {
   idGen: () => string;
   /** Applies or rejects an approved onboarding deviation (spec onboarding, rule 23). */
   onboarding: OnboardingStore;
+  /** Feeds LeaveSubjectView.workingDays (spec approval-queue-ui, rule 17). */
+  holidays: HolidayReader;
 }
 
 /**

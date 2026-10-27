@@ -8,6 +8,9 @@ const WEB_SRC = join(ROOT, 'web', 'src');
 const SHARED_SRC = join(ROOT, 'shared', 'src');
 
 const FACADE_NAMES = [
+  'ActionBody',
+  'ActionResponse',
+  'MAX_COMMENT_CHARS',
   'ChatBody',
   'ChatResponse',
   'ConversationView',
@@ -98,6 +101,20 @@ describe('web imports contracts only from the facade (rule 16)', () => {
       );
     }
     for (const f of files) expect(/\b4000\b|\b4_000\b/.test(read(f)), rel(f)).toBe(false);
+  });
+});
+
+describe('approval-queue-ui amendment W-7 to AT-26', () => {
+  it('AT-26: MAX_COMMENT_CHARS comes from @hr/shared and the literal 1000 appears in no non-test web file', () => {
+    const files = code(WEB_SRC);
+    const users = files.filter((f) => read(f).includes('MAX_COMMENT_CHARS'));
+    expect(users.map(rel)).toContain('web/src/components/approvals/ActionBar.tsx');
+    for (const f of users) {
+      expect(/from\s*['"]@hr\/shared['"]/.test(read(f)), `${rel(f)} must import @hr/shared`).toBe(
+        true,
+      );
+    }
+    for (const f of files) expect(/\b1000\b|\b1_000\b/.test(read(f)), rel(f)).toBe(false);
   });
 });
 

@@ -9,6 +9,7 @@ import {
   InMemoryApprovalStore,
   InMemoryAuditReader,
   InMemoryEmployeeDirectory,
+  InMemoryHolidayReader,
   InMemorySubjectResolver,
 } from '../http/approvals/in-memory.js';
 import type { ApprovalApiDeps } from '../http/approvals/ports.js';
@@ -42,6 +43,7 @@ function makeWorld(events: AuditEvent[] = []) {
     clock: { nowIso: () => NOW },
     idGen: () => 'x-1',
     onboarding,
+    holidays: new InMemoryHolidayReader([]), // approval-queue-ui Q-1
   } as unknown as ApprovalApiDeps;
   const listByKinds = vi.fn(() => Promise.resolve(events));
   const routes = createMetricsRoutes({ summaries: { listByKinds }, clock: { nowIso: () => NOW } });

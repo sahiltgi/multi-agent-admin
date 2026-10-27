@@ -42,3 +42,62 @@ export function isInLeavePeriod(date: string, period: string): boolean {
   const startYear = Number(match[1]);
   return date >= `${String(startYear)}-04-01` && date <= `${String(startYear + 1)}-03-31`;
 }
+
+// ---- Working days (spec approval-queue-ui rule 18; leave-gate rule 9, D-1, D-8) ----
+// A day number counts days since 1970-01-01, so ranges are counted without stepping through
+// every day.
+
+const MS_PER_DAY = 86_400_000;
+
+function toDayNumber(date: string): number {
+  const d = new Date(0);
+  // setUTCFullYear, unlike Date.UTC, keeps years 0–99 as written.
+  d.setUTCFullYear(
+    Number(date.slice(0, 4)),
+    Number(date.slice(5, 7)) - 1,
+    Number(date.slice(8, 10)),
+  );
+  return Math.round(d.getTime() / MS_PER_DAY);
+}
+
+/** Monday to Friday. Day 0 (1970-01-01) was a Thursday. */
+function isWeekdayNumber(day: number): boolean {
+  const dow = (((day + 4) % 7) + 7) % 7; // 0 = Sunday
+  return dow >= 1 && dow <= 5;
+}
+
+export interface WorkingDaySpan {
+  startDate: string;
+  endDate: string;
+  startHalf?: 'pm'; // leave starts at noon on startDate
+  endHalf?: 'am'; // leave ends at noon on endDate
+}
+
+/**
+ * Working days in [startDate, endDate]: Monday to Friday, minus weekday holidays (a weekend
+ * holiday or a duplicate is never subtracted twice). A half-day marker subtracts 0.5 only on a
+ * working day. Throws RangeError for a date that isn't real or an end before the start.
+ */
+export function countWorkingDays(span: WorkingDaySpan, holidayDates: readonly string[]): number {
+  const { startDate, endDate } = span;
+  if (!isRealCalendarDate(startDate) || !isRealCalendarDate(endDate)) {
+    throw new RangeError('dates must be real YYYY-MM-DD calendar dates');
+  }
+  if (endDate < startDate) throw new RangeError('endDate is before startDate');
+
+  const from = toDayNumber(startDate);
+  const to = toDayNumber(endDate) + 1; // half-open [from, to)
+  const holidays = new Set(holidayDates.map(toDayNumber).filter(isWeekdayNumber));
+  const isWorkingDay = (day: number): boolean => isWeekdayNumber(day) && !holidays.has(day);
+
+  const fullWeeks = Math.floor((to - from) / 7);
+  let weekdays = fullWeeks * 5;
+  for (let d = from + fullWeeks * 7; d < to; d++) if (isWeekdayNumber(d)) weekdays++;
+  let holidaysInRange = 0;
+  for (const h of holidays) if (h >= from && h < to) holidaysInRange++;
+
+  let amount = weekdays - holidaysInRange;
+  if (span.startHalf !== undefined && isWorkingDay(from)) amount -= 0.5;
+  if (span.endHalf !== undefined && isWorkingDay(to - 1)) amount -= 0.5;
+  return amount;
+}

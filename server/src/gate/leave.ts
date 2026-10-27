@@ -1,7 +1,7 @@
 // Leave Policy Gate (spec leave-gate). Pure: no clock, no I/O, no randomness, no model.
 // `today` is the only notion of "now", and every verdict comes from the code below (HARD RULE 1).
 import { z } from 'zod';
-import { isInLeavePeriod, isRealCalendarDate } from '../domain/calendar.js';
+import { countWorkingDays, isInLeavePeriod, isRealCalendarDate } from '../domain/calendar.js';
 import {
   LeaveGateResult as DomainLeaveGateResult,
   Id,
@@ -156,13 +156,11 @@ function isWeekdayNumber(day: number): boolean {
 
 class WorkingCalendar {
   private readonly holidays: ReadonlySet<number>;
-  private readonly sortedHolidays: readonly number[];
 
-  constructor(holidays: readonly string[]) {
-    // Weekend holidays are dropped here, so they are never subtracted twice (rule 9).
-    const days = new Set(holidays.map(toDayNumber).filter(isWeekdayNumber));
-    this.holidays = days;
-    this.sortedHolidays = [...days].sort((a, b) => a - b);
+  /** Holiday dates as given; counting goes through countWorkingDays (rule 9; approval-queue-ui L-1). */
+  constructor(readonly holidayDates: readonly string[]) {
+    // Weekend holidays are dropped here, so they are never treated as extra non-working days.
+    this.holidays = new Set(holidayDates.map(toDayNumber).filter(isWeekdayNumber));
   }
 
   isWorkingDay(day: number): boolean {
@@ -170,13 +168,12 @@ class WorkingCalendar {
   }
 
   /** Working days in the half-open range [from, to). */
-  countBetween(from: number, to: number): number {
+  countFromUntil(from: number, to: number): number {
     if (to <= from) return 0;
-    const fullWeeks = Math.floor((to - from) / 7);
-    let weekdays = fullWeeks * 5;
-    for (let d = from + fullWeeks * 7; d < to; d++) if (isWeekdayNumber(d)) weekdays++;
-    const holidaysInRange = this.sortedHolidays.filter((h) => h >= from && h < to).length;
-    return weekdays - holidaysInRange;
+    return countWorkingDays(
+      { startDate: fromDayNumber(from), endDate: fromDayNumber(to - 1) },
+      this.holidayDates,
+    );
   }
 
   /** First working day in [from, to], or undefined. Steps over at most the holidays and a weekend. */
@@ -191,14 +188,6 @@ interface Span {
   end: number; // inclusive
   startHalf: boolean;
   endHalf: boolean;
-}
-
-/** The one counting helper behind balance, consecutive days and dates_valid (rules 9, 10). */
-function workingDayAmount(span: Span, cal: WorkingCalendar): number {
-  let amount = cal.countBetween(span.start, span.end + 1);
-  if (span.startHalf && cal.isWorkingDay(span.start)) amount -= 0.5;
-  if (span.endHalf && cal.isWorkingDay(span.end)) amount -= 0.5;
-  return amount;
 }
 
 // ---- Plain-English formatting (rule 12) ----
@@ -387,7 +376,16 @@ function checkDates(req: LeaveGateRequest, cal: WorkingCalendar): DatesCheck {
     startHalf,
     endHalf,
   };
-  const amount = workingDayAmount(span, cal);
+  // The one count behind balance, consecutive days and dates_valid (rules 9, 10).
+  const amount = countWorkingDays(
+    {
+      startDate,
+      endDate,
+      ...(req.startHalf === undefined ? {} : { startHalf: req.startHalf }),
+      ...(req.endHalf === undefined ? {} : { endHalf: req.endHalf }),
+    },
+    cal.holidayDates,
+  );
   if (amount <= 0) {
     return invalid(
       `${startDate} to ${endDate} covers 0 working days`,
@@ -470,7 +468,7 @@ function checkNotice(
 ): Evaluated {
   const minimum = policy.minNoticeWorkingDays[leaveType];
   const expected = `at least ${workingDaysNotice(minimum)}`;
-  const given = cal.countBetween(today, span.start);
+  const given = cal.countFromUntil(today, span.start);
   const actual = workingDaysNotice(given);
   if (given >= minimum) {
     return pass('notice_period', expected, actual, `The notice period is met (${actual}).`);

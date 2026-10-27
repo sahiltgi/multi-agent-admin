@@ -12,6 +12,7 @@ import {
   InMemoryApprovalStore,
   InMemoryAuditReader,
   InMemoryEmployeeDirectory,
+  InMemoryHolidayReader,
   InMemorySubjectResolver,
 } from '../http/approvals/in-memory.js';
 import type { ApprovalApiDeps } from '../http/approvals/ports.js';
@@ -80,6 +81,7 @@ function makeApp() {
     clock,
     idGen,
     onboarding,
+    holidays: new InMemoryHolidayReader([]), // approval-queue-ui Q-1
   } as unknown as ApprovalApiDeps;
   return { app: createApp(deps, routes), storeCalls };
 }

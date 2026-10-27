@@ -20,10 +20,11 @@ import { ErrorBody } from '../errors.js';
 import { InMemoryApprovalStore } from './in-memory.js';
 import {
   InMemoryAuditReader,
+  InMemoryHolidayReader,
   InMemoryEmployeeDirectory,
   InMemorySubjectResolver,
 } from './in-memory.js';
-import type { ApprovalApiDeps } from './ports.js';
+import type { ApprovalApiDeps, HolidayReader } from './ports.js';
 import { createApprovalRoutes } from './routes.js';
 import {
   ActionResponse,
@@ -171,10 +172,16 @@ interface WorldOptions {
   questions?: PolicyQuestion[];
   items?: ApprovalItem[];
   events?: AuditEvent[];
+  /** approval-queue-ui AT-18: replaces the default empty holiday reader. */
+  holidays?: HolidayReader;
+  /** approval-queue-ui AT-18: fields merged into lr-101 (halves, dates). */
+  lr101?: Partial<LeaveRequest>;
 }
 
 function makeWorld(opts: WorldOptions = {}) {
-  const leaves = fixtureLeaves();
+  const leaves = fixtureLeaves().map((l) =>
+    l.id === 'lr-101' ? { ...l, ...(opts.lr101 ?? {}) } : l,
+  );
   const initialLeaves = structuredClone(leaves);
   const initialItems = opts.items ?? fixtureItems();
   const items = structuredClone(initialItems);
@@ -217,6 +224,8 @@ function makeWorld(opts: WorldOptions = {}) {
     clock: { nowIso: () => state.now },
     idGen: () => `ae-${String(++state.counter).padStart(3, '0')}`,
     onboarding: new InMemoryOnboardingStore(),
+    // Amended by approval-queue-ui Q-1.
+    holidays: opts.holidays ?? new InMemoryHolidayReader([]),
   };
   return { deps, sink, state, approvals, subjects, questions, initialItems, initialLeaves };
 }
@@ -493,6 +502,11 @@ describe('visibility', () => {
         list.items.map((i) => [i.item.id, i.canAct]),
         user,
       ).toEqual(want);
+      // Amended by approval-queue-ui Q-3: every fixture subject view carries workingDays.
+      for (const i of list.items) {
+        expect(i.subject, i.item.id).not.toBeNull();
+        expect(Object.keys(i.subject ?? {}), i.item.id).toContain('workingDays');
+      }
     }
     const open = await call('emp-002', 'GET', '/approvals?status=open');
     expect(listIds(open)).toEqual(['ai-001', 'ai-004', 'ai-005']);
@@ -512,6 +526,16 @@ describe('visibility', () => {
     const view = GetApprovalResponse.parse(shown.body);
     expect(view.gateResult).toEqual(G);
     expect(view.subject?.employeeId).toBe('emp-003');
+    // Amended by approval-queue-ui Q-3: the deep-equal includes workingDays.
+    expect(view.subject).toEqual({
+      requestId: 'lr-101',
+      employeeId: 'emp-003',
+      leaveType: 'annual',
+      startDate: '2026-11-16',
+      endDate: '2026-11-17',
+      status: 'pending_approval',
+      workingDays: 2,
+    });
     const keys = walkKeys(shown.body);
     expect(keys).not.toContain('displayName');
     expect(keys).not.toContain('email');
@@ -1230,5 +1254,87 @@ describe('policy-qa AT-51: HTTP schemas', () => {
     const code = ErrorCode.parse('action_not_allowed');
     expect(new HttpError(code).status).toBe(409);
     expect(errorBody(code).error.message).toBe("This action isn't available for this item.");
+  });
+});
+
+// ---- approval-queue-ui: server working days (rules 17, 19) ----
+describe('approval-queue-ui: LeaveSubjectView.workingDays', () => {
+  const HOLIDAY = (date: string) => ({ date, name: 'Synthetic Holiday A', period: '2026-27' });
+  const workingDaysOf = async (
+    w: World,
+    user: string,
+    id = 'ai-001',
+  ): Promise<{ list: unknown; one: unknown; text: string }> => {
+    const { call } = await boot(w);
+    const l = await call(user, 'GET', '/approvals');
+    const o = await call(user, 'GET', `/approvals/${id}`);
+    expect(l.status).toBe(200);
+    const fromList = ListApprovalsResponse.parse(l.body).items.find((i) => i.item.id === id);
+    return {
+      list: fromList?.subject?.workingDays,
+      one: GetApprovalResponse.parse(o.body).subject?.workingDays,
+      text: l.text,
+    };
+  };
+
+  it('AT-18: workingDays is computed from stored dates, halves and holidays; reader gets the range', async () => {
+    const reader = new InMemoryHolidayReader([]);
+    const spy = vi.spyOn(reader, 'getHolidays');
+    const w = makeWorld({ holidays: reader });
+    const r = await workingDaysOf(w, 'emp-002');
+    expect(r.list).toBe(2);
+    expect(r.one).toBe(2);
+    expect(spy).toHaveBeenCalledWith({ from: '2026-11-16', to: '2026-11-17' });
+
+    const half = await workingDaysOf(makeWorld({ lr101: { startHalf: 'pm' } }), 'emp-002');
+    expect(half.list).toBe(1.5);
+    expect(half.one).toBe(1.5);
+
+    const hol = await workingDaysOf(
+      makeWorld({ holidays: new InMemoryHolidayReader([HOLIDAY('2026-11-17')]) }),
+      'emp-002',
+    );
+    expect(hol.list).toBe(1);
+    expect(hol.one).toBe(1);
+  });
+
+  it('AT-18: a throwing or malformed holiday read gives null, a 200, and no leaked text', async () => {
+    const down = await workingDaysOf(
+      makeWorld({ holidays: { getHolidays: () => Promise.reject(new Error('db-down')) } }),
+      'emp-002',
+    );
+    expect(down.list).toBeNull();
+    expect(down.one).toBeNull();
+    expect(down.text).not.toContain('db-down');
+    const bad = await workingDaysOf(
+      makeWorld({ holidays: { getHolidays: () => Promise.resolve([{ date: 'not-a-date' }]) } }),
+      'emp-002',
+    );
+    expect(bad.list).toBeNull();
+  });
+
+  it('AT-18: escalated leave carries it for hr_admin; escalation items have subject null; reads write nothing', async () => {
+    const w = makeWorld();
+    const eventsBefore = w.sink.events.length;
+    const r = await workingDaysOf(w, 'emp-001', 'ai-003');
+    expect(r.list).toBe(5);
+    expect(r.one).toBe(5);
+    expect(w.sink.events.length).toBe(eventsBefore);
+    await expectAllItemsUnchanged(w);
+    const qa = qaWorld();
+    const { call } = await boot(qa);
+    const esc = ListApprovalsResponse.parse(
+      (await call('emp-001', 'GET', '/approvals')).body,
+    ).items.find((i) => i.item.id === 'ai-050');
+    expect(esc?.subject).toBeNull();
+  });
+
+  it('AT-18: a POST approve human_action payload has no workingDays key', async () => {
+    const w = makeWorld();
+    const { act } = await boot(w);
+    expect((await act('emp-002', 'ai-001', 'approve', G)).status).toBe(200);
+    const payload = humanEvents(w)[0]?.payload ?? {};
+    expect(Object.keys(payload)).not.toContain('workingDays');
+    expect(JSON.stringify(payload)).not.toContain('workingDays');
   });
 });

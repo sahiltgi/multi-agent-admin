@@ -17,6 +17,7 @@ import {
   InMemoryApprovalStore,
   InMemoryAuditReader,
   InMemoryEmployeeDirectory,
+  InMemoryHolidayReader,
   InMemorySubjectResolver,
 } from '../http/approvals/in-memory.js';
 import type { ApprovalApiDeps } from '../http/approvals/ports.js';
@@ -198,6 +199,7 @@ function makeWorld(checklists: Rec[] = [checklist('chk-a')]) {
     clock,
     idGen,
     onboarding,
+    holidays: new InMemoryHolidayReader([]), // approval-queue-ui Q-1
   } as unknown as ApprovalApiDeps;
   return { deps, routes, sink, state, onboarding, notesAgent, gate };
 }

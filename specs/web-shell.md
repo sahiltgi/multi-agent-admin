@@ -433,6 +433,16 @@ Owner decisions made on 2026-10-26. They are settled.
   - A-9: `docs/architecture.md` names employee-chat and `server/src/handbook/`.
   - A-10: the `/chat` test harness (AT-9, AT-14, AT-17, AT-19, AT-20, AT-21, AT-22) stubs `GET /my-requests`, counts `POST /api/chat` only, scopes alerts and statuses to the chat panel, and expects the status pill.
 
+- **Amended by specs/approval-queue-ui.md (2026-10-27):** a sanctioned rescope, owner-approved under approval-queue-ui OQ-6. Each item's full wording is in approval-queue-ui rule 21.
+  - W-1: Non-goals and D-4. Approve, Reject, Comment and Resolve (with the flagged-approve-needs-comment rule) are in scope for `/queue`, which now calls `POST /approvals/:itemId/actions`. Rule-by-rule ✓/✗ is in scope for `/queue` only.
+  - W-2: rule 2 and the HTTP calls table gain `POST {base}/approvals/{encoded itemId}/actions`. In AT-3, Ravi also approves `ai-001` once.
+  - W-3: rule 4. A switch on `/queue` also aborts an in-flight `POST`, clears drafts, `Action recorded.` and the action alert, and selects `Leave requests`.
+  - W-4: rule 14 is replaced by approval-queue-ui rules 1–10. Rows become cards in two tabs; `No gate result`, server order and the badge source are kept.
+  - W-5: AT-15. The `ai-003` assertions run on the `Escalations and onboarding` tab; status is the card's `StatusPill`.
+  - W-6: AT-23. Order is checked per tab; question, draft and rationale canaries now render as text; comment and reason canaries stay absent; the kind and subject-id row assertions are dropped (cards don't render them).
+  - W-7: rule 16, AT-25 and AT-26. The facade adds `ActionBody`, `ActionResponse` and `MAX_COMMENT_CHARS`; the literal `1000` appears in no web file.
+  - W-8: no D-5-style waiver. approval-queue-ui changes `server/src/`.
+
 How this spec applies the decisions, not owner text: rule 16 adds `ErrorBody`, `ErrorCode` and `MAX_USER_TEXT_CHARS` to the facade (from default rules 8 and 11) and leaves out `MyRequestsResponse` (no route needs it). Rule 15 maps D-4's "kind" to `eventType`. Rule 18 lists `zod` as a web and shared dependency.
 
 ## Open questions

@@ -181,6 +181,8 @@ function makeWorld(opts: WorldOptions = {}) {
     clock: { nowIso: () => NOW },
     idGen,
     onboarding: new InMemoryOnboardingStore(),
+    // Amended by approval-queue-ui Q-1: every ApprovalApiDeps carries a holiday reader.
+    holidays: { getHolidays: () => Promise.resolve([]) },
   };
   // spec onboarding (OQ-14): an employee's onboarding message gets the fixed denied text.
   const onboardingTexts = opts.onboardingTexts ?? { denied: 'DENIED-FIXTURE' };

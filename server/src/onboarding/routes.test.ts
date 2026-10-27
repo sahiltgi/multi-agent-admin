@@ -15,6 +15,7 @@ import {
   InMemoryApprovalStore,
   InMemoryAuditReader,
   InMemoryEmployeeDirectory,
+  InMemoryHolidayReader,
   InMemorySubjectResolver,
 } from '../http/approvals/in-memory.js';
 import type { ApprovalApiDeps } from '../http/approvals/ports.js';
@@ -195,6 +196,7 @@ function makeWorld(o: WorldOpts = {}) {
     clock,
     idGen,
     onboarding,
+    holidays: new InMemoryHolidayReader([]), // approval-queue-ui Q-1
   } as unknown as ApprovalApiDeps;
   // onboarding-api (rule 19): one deps shape for all four routes. The read and PATCH tests below
   // never reach the create-only dependencies, so those are stubs that fail loudly if they are used.
