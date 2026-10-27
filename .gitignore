@@ -16,3 +16,8 @@ CLAUDE.local.md
 # Misc
 *.log
 .DS_Store
+
+# Playwright e2e output (spec e2e-demo, rule 13); e2e/recordings/ is committed
+e2e/screenshots/
+playwright-report/
+test-results/
