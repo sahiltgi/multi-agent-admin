@@ -619,6 +619,8 @@ Owner decisions given with the request, 2026-10-25:
   - **OQ-2:** intake 500s aren't escalations, but they still count as requests. `tryAudit` marks them with `internalError: true`, and legacy events are recognised by `agent_error` / `store_error` (rules 5, 8, 21).
   - **OQ-3:** only `conversation_full` conflicts are excluded. A lost save race counts as a request with its cost (rule 18).
   - **OQ-4:** per-call token visibility stays as it is (Non-goals).
+- **Amended by specs/audit-view.md (2026-10-27):** a sanctioned rescope, owner-approved under audit-view OQ-9. Each item's full wording is in audit-view rule 28.
+  - A-11: Non-goals "Web UI". The request's stored `usage` is shown to `hr_admin` in the trace timeline. `GET /metrics/agents` still has no view.
 
 ## Open questions
 

@@ -1,6 +1,8 @@
 // Pure wiring of the running server (spec mongo-persistence, rule 10 step 7; D-18). Reads no env
 // and opens no connection: everything arrives in ServerParts, so tests use in-memory ports.
 import type { Express } from 'express';
+import { FsDocReader, FsEvalResultsReader } from '../audit-view/fs-readers.js';
+import { createAuditViewRoutes } from '../audit-view/routes.js';
 import { buildLeaveAgentDeps } from '../agents/leave/deps.js';
 import { runLeaveAgent } from '../agents/leave/run.js';
 import { runOnboardingNotesAgent } from '../agents/onboarding/notes.js';
@@ -160,5 +162,11 @@ export function buildApp(parts: ServerParts): Express {
     ...createMetricsRoutes({ summaries: stores.audit, clock }),
     // spec employee-chat, rule 14: read-only handbook sections from the boot-loaded body.
     ...createHandbookRoutes({ handbook: boot.handbook }),
+    // spec audit-view, rules 1, 10, 15: the trace timeline, eval history and build notes, read-only.
+    ...createAuditViewRoutes({
+      trace: approvalDeps,
+      evalResults: new FsEvalResultsReader(boot.auditViewPaths.evalResultsDir),
+      docs: new FsDocReader(boot.auditViewPaths),
+    }),
   ]);
 }

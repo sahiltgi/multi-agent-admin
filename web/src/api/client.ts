@@ -2,13 +2,16 @@
 // every body, success or error, is parsed with an @hr/shared schema before anything uses it.
 import {
   ActionResponse,
+  BuildNotesResponse,
   ChatBody,
   ChatResponse,
   ErrorBody,
+  EvalHistoryResponse,
   HandbookSectionResponse,
   ListApprovalsResponse,
   MyRequestsResponse,
   TraceResponse,
+  TraceTimelineResponse,
 } from '@hr/shared';
 import type { ActionBody } from '@hr/shared';
 import { API_BASE } from './env.js';
@@ -99,6 +102,22 @@ export function postAction(
 
 export function getTrace(requestId: string, opts: CallOptions): Promise<ApiResult<TraceResponse>> {
   return request(TraceResponse, `/audit/${encodeURIComponent(requestId)}`, opts);
+}
+
+// spec audit-view, rules 19 and 20: the three /audit calls. None has a query string.
+export function getTimeline(
+  requestId: string,
+  opts: CallOptions,
+): Promise<ApiResult<TraceTimelineResponse>> {
+  return request(TraceTimelineResponse, `/audit/${encodeURIComponent(requestId)}/timeline`, opts);
+}
+
+export function getEvalHistory(opts: CallOptions): Promise<ApiResult<EvalHistoryResponse>> {
+  return request(EvalHistoryResponse, '/evals/history', opts);
+}
+
+export function getBuildNotes(opts: CallOptions): Promise<ApiResult<BuildNotesResponse>> {
+  return request(BuildNotesResponse, '/build-notes', opts);
 }
 
 // spec employee-chat, rule 11: no query string and no employeeId; the server scopes to the actor.

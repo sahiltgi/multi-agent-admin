@@ -782,6 +782,8 @@ Answers to the blocking open questions, approved by the owner on 2026-10-22. D-n
 - **D-23 (run-evals baseline, answers OQ-23, 2026-10-23):** the baseline is the newest earlier v2 results file (`schemaVersion: 2`) for the same agent, whatever its `promptVersion`. "Newest" is decided by the file's `startedAt`, not by its name. v1 files (`<date>.json`, `schemaVersion: 1`) are never a baseline.
 - **D-24 (a write that fails part-way, answers OQ-24, 2026-10-23):** files already written are kept, never deleted. The runner prints the written paths, reports the failure without the error's message, and exits 2.
 - **D-25 (pricing values and upkeep, answers OQ-25, 2026-10-23):** the code step fills `evals/pricing.yaml` with the current published prices, and the code reviewer and owner check them. Whoever changes a shipped model updates the file in the same change. A pricing change needs no matching test change.
+- **Amended by specs/audit-view.md (2026-10-27):** a sanctioned rescope, owner-approved under audit-view OQ-9. Each item's full wording is in audit-view rule 28.
+  - A-10: Non-goals "Dashboard" and the note "not shared with web until the dashboard spec". The dashboard reads results through `GET /evals/history` (summaries only). The runner and `EvalRun` don't change.
 
 ## Open questions
 

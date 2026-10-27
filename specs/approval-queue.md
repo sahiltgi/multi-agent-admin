@@ -469,6 +469,9 @@ Category: `routing | extraction | verdict | citation | injection`. These categor
   - Q-2: Edge cases ("Half days", "Weekends and holidays"). The views now carry the server-computed `workingDays`; actions still apply no working-day logic.
   - Q-3: AT-7 and AT-8. Fixture subject views include `workingDays`, and AT-8's deep-equal includes it. AT-6 (no gate import under `server/src/http/`) is unchanged.
 
+- **Amended by specs/audit-view.md (2026-10-27):** a sanctioned rescope, owner-approved under audit-view OQ-9. Each item's full wording is in audit-view rule 28.
+  - A-9: rule 13 and the module list. The trace handler's read, RBAC and `askerView` move to `server/src/http/approvals/trace.ts` as `readVisibleTrace`, with their behaviour unchanged; `GET /audit/:requestId/timeline` calls it too. AT-21 to AT-24 pass unchanged.
+
 ## Open questions
 
 Answered by the owner on 2026-10-15 (accepted the proposed defaults). Each answer is written into the rules and ATs it touched.

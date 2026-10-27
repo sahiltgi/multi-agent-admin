@@ -2,6 +2,7 @@
 // MemoryRouter in tests. Routes are keyed by persona so a switch drops their data (rule 4).
 import { useState } from 'react';
 import { Navigate, Route, Routes, useMatch } from 'react-router';
+import type { AuditTab } from './components/audit/AuditTabs.js';
 import { Header } from './components/Header.js';
 import { usePersona } from './persona/context.js';
 import { PersonaProvider } from './persona/PersonaProvider.js';
@@ -19,6 +20,9 @@ function Shell() {
   const onAudit = useMatch('/audit') !== null;
   const [auditRequestId, setAuditRequestId] = useState<string | null>(null);
   if (!onAudit && auditRequestId !== null) setAuditRequestId(null);
+  // spec audit-view, rule 24: the selected audit tab survives a persona switch, likewise.
+  const [auditTab, setAuditTab] = useState<AuditTab>('trace');
+  if (!onAudit && auditTab !== 'trace') setAuditTab('trace');
   return (
     <>
       <Header />
@@ -29,7 +33,15 @@ function Shell() {
           <Route path="/queue" element={<Queue key={id} />} />
           <Route
             path="/audit"
-            element={<Audit key={id} lastRequestId={auditRequestId} onLoad={setAuditRequestId} />}
+            element={
+              <Audit
+                key={id}
+                lastRequestId={auditRequestId}
+                onLoad={setAuditRequestId}
+                tab={auditTab}
+                onTab={setAuditTab}
+              />
+            }
           />
           <Route path="*" element={<NotFound />} />
         </Routes>

@@ -21,6 +21,8 @@ import * as qa from '../../server/src/domain/qa.js';
 import * as errors from '../../server/src/http/errors.js';
 import * as intake from '../../server/src/intake/schemas.js';
 import * as handbookSchemas from '../../server/src/handbook/schemas.js';
+// Amended by specs/audit-view.md (A-8): three more facade names from this module.
+import * as auditView from '../../server/src/audit-view/schemas.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const API_TS = join(ROOT, 'shared', 'src', 'api.ts');
@@ -31,11 +33,13 @@ const EXPECTED_KEYS = [
   'ApprovalItemView',
   'ApprovalKind',
   'ApprovalStatus',
+  'BuildNotesResponse',
   'ChatBody',
   'ChatResponse',
   'ConversationView',
   'ErrorBody',
   'ErrorCode',
+  'EvalHistoryResponse',
   'HandbookSectionResponse',
   'LeaveVerdict',
   'ListApprovalsResponse',
@@ -47,6 +51,7 @@ const EXPECTED_KEYS = [
   'Role',
   'SectionId',
   'TraceResponse',
+  'TraceTimelineResponse',
 ];
 
 function stripComments(src: string): string {
@@ -159,6 +164,9 @@ describe('facade exports (rule 16)', () => {
       MyRequestsResponse: intake,
       SectionId: qa,
       HandbookSectionResponse: handbookSchemas,
+      BuildNotesResponse: auditView,
+      EvalHistoryResponse: auditView,
+      TraceTimelineResponse: auditView,
     };
     const facade: Record<string, unknown> = { ...api };
     for (const name of EXPECTED_KEYS) expect(facade[name]).toBe(sources[name]?.[name]);
@@ -262,6 +270,7 @@ describe('browser-safe import graph (rule 17)', () => {
       'server/src/intake/schemas.ts',
       'server/src/domain/handbook.ts',
       'server/src/handbook/schemas.ts',
+      'server/src/audit-view/schemas.ts', // specs/audit-view.md A-8
     ]) {
       expect(seen).toContain(must);
     }
@@ -319,5 +328,23 @@ describe('browser-safe import graph (rule 17)', () => {
       `import type { X } from 'express';\nimport { type Y } from 'mongoose';\nimport { z } from 'zod';\nexport type { X };\nexport const s = z.string();\nexport type T = Y;\n`,
     );
     expect(walkImports(file).violations).toEqual([]);
+  });
+});
+
+// specs/audit-view.md AT-27 (rule 26): three more re-exports, the identical server objects.
+describe('audit-view facade (specs/audit-view.md rule 26)', () => {
+  it('AT-27: the three audit-view schemas are the identical server objects and the list is exact', () => {
+    expect(Object.keys(api).sort()).toEqual(EXPECTED_KEYS);
+    expect(api.TraceTimelineResponse).toBe(auditView.TraceTimelineResponse);
+    expect(api.EvalHistoryResponse).toBe(auditView.EvalHistoryResponse);
+    expect(api.BuildNotesResponse).toBe(auditView.BuildNotesResponse);
+  });
+
+  it('AT-27: the walker visits server/src/audit-view/schemas.ts and reports no violation', () => {
+    const { visited, violations } = walkImports(API_TS);
+    expect(violations).toEqual([]);
+    const seen = [...visited].map((f) => relative(ROOT, f).split('\\').join('/'));
+    expect(seen).toContain('server/src/audit-view/schemas.ts');
+    expect(seen).not.toContain('server/src/evals/schemas.ts');
   });
 });

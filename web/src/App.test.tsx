@@ -10,7 +10,7 @@ import {
   ChatResponse,
   ListApprovalsResponse,
   MAX_USER_TEXT_CHARS,
-  TraceResponse,
+  TraceTimelineResponse,
 } from '@hr/shared';
 import { App } from './App.js';
 
@@ -229,17 +229,55 @@ function submittedCard(verdict: string): Record<string, unknown> {
     failedRules: [],
   };
 }
+// Amended by specs/audit-view.md A-7: /audit stubs GET /audit/:id/timeline with a
+// TraceTimelineResponse. `auditEvent` now builds a TimelineStep; a payload argument is never part
+// of a step, so it can never reach the response (AT-24's payload canary stays absent).
 function auditEvent(
   id: string,
   at: string,
   eventType: string,
   actor: { kind: string; id: string },
-  payload: Record<string, unknown> = {},
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept so call sites stay unchanged (audit-view A-7); a payload is never part of a step.
+  _payload: Record<string, unknown> = {},
 ): Record<string, unknown> {
-  return { id, traceId: 'lr-101', at, actor, eventType, payload };
+  const stage =
+    eventType === 'gate_result'
+      ? 'gate'
+      : eventType === 'human_action'
+        ? 'human'
+        : actor.kind === 'tool'
+          ? 'tool'
+          : actor.kind === 'system'
+            ? 'system'
+            : 'agent';
+  return {
+    eventId: id,
+    at,
+    eventType,
+    actor,
+    stage,
+    kind: null,
+    agent: null,
+    model: null,
+    promptVersion: null,
+    tool: null,
+    outcome: null,
+    isError: null,
+    tokens: null,
+    latencyMs: null,
+    input: null,
+    injection: { flagged: false, suspected: false, source: null, excerpt: null },
+    gate: null,
+    human: null,
+  };
 }
-function traceBody(events: Record<string, unknown>[]): unknown {
-  return TraceResponse.parse({ requestId: 'lr-101', events });
+function traceBody(steps: Record<string, unknown>[]): unknown {
+  return TraceTimelineResponse.parse({
+    requestId: 'lr-101',
+    steps,
+    injectionCount: 0,
+    requestTotal: { status: 'hidden' },
+  });
 }
 
 const defaultHandler: Handler = (c) => {
@@ -629,7 +667,7 @@ describe('persona switching', () => {
     expect(bodyText().includes('gate_result')).toBe(false);
     await waitCalls(before + 1);
     const c = must(calls[before]);
-    expect(c.url).toBe('/api/audit/lr-101');
+    expect(c.url).toBe('/api/audit/lr-101/timeline');
     expect(c.headers['x-demo-user']).toBe('emp-003');
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('Not found.');
@@ -667,7 +705,7 @@ describe('persona switching', () => {
     await pick(user, LABELS.ravi);
     await waitCalls(before + 1);
     const c = must(calls[before]);
-    expect(c.url).toBe('/api/audit/lr-101');
+    expect(c.url).toBe('/api/audit/lr-101/timeline');
     expect(c.headers['x-demo-user']).toBe('emp-002');
   });
 
@@ -681,7 +719,7 @@ describe('persona switching', () => {
     const before = calls.length;
     await pick(user, LABELS.ravi);
     await waitCalls(before + 1);
-    expect(must(calls[before]).url).toBe('/api/audit/lr-101');
+    expect(must(calls[before]).url).toBe('/api/audit/lr-101/timeline');
     expect(must(calls[before]).headers['x-demo-user']).toBe('emp-002');
   });
 
@@ -1211,11 +1249,11 @@ describe('routes', () => {
 
     await loadAudit(user, '  lr-101  ');
     await waitCalls(1);
-    expect(must(calls[0]).url).toBe('/api/audit/lr-101');
+    expect(must(calls[0]).url).toBe('/api/audit/lr-101/timeline');
 
     await loadAudit(user, '../approvals');
     await waitCalls(2);
-    expect(must(calls[1]).url).toBe('/api/audit/..%2Fapprovals');
+    expect(must(calls[1]).url).toBe('/api/audit/..%2Fapprovals/timeline');
     expect(calls.some((c) => c.url === '/api/approvals')).toBe(false);
   });
 

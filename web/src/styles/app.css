@@ -437,3 +437,130 @@ button.action:disabled {
     padding: var(--gutter-phone);
   }
 }
+
+/* ---- /audit (spec audit-view, rule 29): a hairline-ruled vertical timeline ---- */
+.timeline-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+  margin: 16px 0 8px;
+}
+
+.timeline-summary p {
+  margin: 0;
+}
+
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-left: 1px solid var(--rule);
+}
+
+li[data-stage] {
+  position: relative;
+  padding: 10px 0 10px 16px;
+  border-bottom: 1px solid var(--rule);
+}
+
+li[data-stage] .fields {
+  margin: 6px 0 0;
+}
+
+.step-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+
+.step-stage {
+  min-width: 7em;
+  color: var(--ink-muted);
+}
+
+li[data-stage='gate'] .step-stage,
+li[data-stage='human'] .step-stage {
+  color: var(--ink);
+}
+
+.step-error {
+  color: var(--tone-plum);
+}
+
+.step-input,
+.step-gate,
+.step-human {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-top: 6px;
+}
+
+.step-gate .rule-rows {
+  flex-basis: 100%;
+  padding: 0;
+}
+
+/* The injection mark is a tone plus visible text, never colour alone (rule 21). */
+li[data-injection] {
+  border-left: 3px solid var(--tone-amber);
+  margin-left: -2px;
+}
+
+li[data-injection='flagged'] {
+  border-left-color: var(--tone-plum);
+}
+
+.step-injection {
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+}
+
+[data-injection='flagged'] .step-injection-label {
+  color: var(--tone-plum);
+  font-weight: 600;
+}
+
+[data-injection='suspected'] .step-injection-label {
+  color: var(--tone-amber);
+  font-weight: 600;
+}
+
+.eval-series + .eval-series,
+.ai-log {
+  margin-top: 24px;
+}
+
+.ledger-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.ledger-table th,
+.ledger-table td {
+  padding: 6px 8px 6px 0;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.ledger-table th {
+  color: var(--ink-muted);
+  font-weight: 500;
+}
+
+.doc code,
+.ledger-table code {
+  font-family: var(--font-mono);
+}
+
+@media (max-width: 640px) {
+  .ledger-table {
+    display: block;
+    overflow-x: auto;
+  }
+}
