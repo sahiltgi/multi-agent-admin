@@ -85,6 +85,7 @@ export function buildApp(parts: ServerParts): Express {
     clock,
     idGen,
     onboarding: stores.onboarding,
+    holidays: stores.leaveData, // spec approval-queue-ui, rule 17
   };
   const intakeDeps: IntakeDeps = {
     directory: stores.directory,

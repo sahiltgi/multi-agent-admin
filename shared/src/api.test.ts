@@ -26,6 +26,8 @@ const ROOT = resolve(import.meta.dirname, '../..');
 const API_TS = join(ROOT, 'shared', 'src', 'api.ts');
 
 const EXPECTED_KEYS = [
+  'ActionBody',
+  'ActionResponse',
   'ApprovalItemView',
   'ApprovalKind',
   'ApprovalStatus',
@@ -37,6 +39,7 @@ const EXPECTED_KEYS = [
   'HandbookSectionResponse',
   'LeaveVerdict',
   'ListApprovalsResponse',
+  'MAX_COMMENT_CHARS',
   'MAX_USER_TEXT_CHARS',
   'MyRequestsResponse',
   'OnboardingVerdict',
@@ -138,6 +141,9 @@ describe('facade exports (rule 16)', () => {
       ChatBody: chat,
       ChatResponse: chat,
       ConversationView: chat,
+      ActionBody: approvals,
+      ActionResponse: approvals,
+      MAX_COMMENT_CHARS: approvals,
       ApprovalItemView: approvals,
       ListApprovalsResponse: approvals,
       TraceResponse: approvals,
@@ -181,26 +187,8 @@ function webCode(dir: string): string[] {
 
 describe('employee-chat facade (rule 12)', () => {
   it('AT-17: exports the exact A-6 list, identical to the server objects, and re-export only', () => {
-    expect(Object.keys(api).sort()).toEqual([
-      'ApprovalItemView',
-      'ApprovalKind',
-      'ApprovalStatus',
-      'ChatBody',
-      'ChatResponse',
-      'ConversationView',
-      'ErrorBody',
-      'ErrorCode',
-      'HandbookSectionResponse',
-      'LeaveVerdict',
-      'ListApprovalsResponse',
-      'MAX_USER_TEXT_CHARS',
-      'MyRequestsResponse',
-      'OnboardingVerdict',
-      'QaVerdict',
-      'Role',
-      'SectionId',
-      'TraceResponse',
-    ]);
+    // Amended by approval-queue-ui W-7 / E-1: the list is EXPECTED_KEYS.
+    expect(Object.keys(api).sort()).toEqual(EXPECTED_KEYS);
     expect(api.MyRequestsResponse).toBe(intake.MyRequestsResponse);
     expect(api.SectionId).toBe(qa.SectionId);
     expect(api.HandbookSectionResponse).toBe(handbookSchemas.HandbookSectionResponse);
@@ -223,6 +211,36 @@ describe('employee-chat facade (rule 12)', () => {
         `${f} RegExp literal`,
       ).toBe(false);
       expect(/new\s+RegExp\s*\([^)]*HB-/.test(text), `${f} new RegExp`).toBe(false);
+    }
+  });
+});
+
+describe('approval-queue-ui facade (rule 20)', () => {
+  it('AT-20: exports the W-7 list, the new names are the server objects, no view schemas leak', () => {
+    expect(Object.keys(api).sort()).toEqual(EXPECTED_KEYS);
+    expect(api.ActionBody).toBe(approvals.ActionBody);
+    expect(api.ActionResponse).toBe(approvals.ActionResponse);
+    expect(api.MAX_COMMENT_CHARS).toBe(approvals.MAX_COMMENT_CHARS);
+    const facade: Record<string, unknown> = { ...api };
+    for (const name of [
+      'LeaveSubjectView',
+      'PolicyQuestionView',
+      'DeviationView',
+      'ItemGateResult',
+    ]) {
+      expect(name in facade).toBe(false);
+    }
+  });
+
+  it('AT-20: no non-test web file declares ActionBody, ActionResponse or MAX_COMMENT_CHARS, or writes 1000', () => {
+    const declaration =
+      /\b(?:const|let|var|type|interface|function|class|enum)\s+(?:ActionBody|ActionResponse|MAX_COMMENT_CHARS)\b/;
+    const files = webCode(join(ROOT, 'web', 'src'));
+    expect(files.length).toBeGreaterThan(0);
+    for (const f of files) {
+      const text = readFileSync(f, 'utf8');
+      expect(declaration.test(text), `${f} redeclares a facade name`).toBe(false);
+      expect(/\b1000\b|\b1_000\b/.test(text), `${f} has the literal 1000`).toBe(false);
     }
   });
 });

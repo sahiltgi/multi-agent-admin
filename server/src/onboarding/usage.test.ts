@@ -14,6 +14,7 @@ import {
   InMemoryApprovalStore,
   InMemoryAuditReader,
   InMemoryEmployeeDirectory,
+  InMemoryHolidayReader,
 } from '../http/approvals/in-memory.js';
 import type { ApprovalApiDeps } from '../http/approvals/ports.js';
 import { createApp } from '../http/app.js';
@@ -138,6 +139,7 @@ function makeWorld(o: Opts = {}) {
     clock: { nowIso: () => NOW },
     idGen,
     onboarding: store,
+    holidays: new InMemoryHolidayReader([]), // approval-queue-ui Q-1
   } as unknown as ApprovalApiDeps;
   return { sink, routes, approvalDeps };
 }

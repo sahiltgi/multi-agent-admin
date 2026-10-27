@@ -1,6 +1,7 @@
 // The web's only HTTP client (spec web-shell, rules 2 and 8). Every call carries `x-demo-user`, and
 // every body, success or error, is parsed with an @hr/shared schema before anything uses it.
 import {
+  ActionResponse,
   ChatBody,
   ChatResponse,
   ErrorBody,
@@ -9,6 +10,7 @@ import {
   MyRequestsResponse,
   TraceResponse,
 } from '@hr/shared';
+import type { ActionBody } from '@hr/shared';
 import { API_BASE } from './env.js';
 
 /** The part of an @hr/shared schema the client uses; zod is imported only in env.ts and storage.ts (rule 16). */
@@ -84,6 +86,15 @@ export function postChat(
 
 export function getApprovals(opts: CallOptions): Promise<ApiResult<ListApprovalsResponse>> {
   return request(ListApprovalsResponse, '/approvals', opts);
+}
+
+// spec approval-queue-ui, rule 13: the body is built with ActionBody.parse by the caller. Never retried.
+export function postAction(
+  itemId: string,
+  body: ActionBody,
+  opts: CallOptions,
+): Promise<ApiResult<ActionResponse>> {
+  return request(ActionResponse, `/approvals/${encodeURIComponent(itemId)}/actions`, opts, body);
 }
 
 export function getTrace(requestId: string, opts: CallOptions): Promise<ApiResult<TraceResponse>> {

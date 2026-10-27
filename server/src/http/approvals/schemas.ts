@@ -41,6 +41,9 @@ export const LeaveSubjectView = z
     startHalf: leave.startHalf,
     endHalf: leave.endHalf,
     status: leave.status,
+    // Computed by the server from the stored dates, halves and holidays; null when it can't be
+    // computed, never guessed (spec approval-queue-ui, rule 17; HARD RULE 6).
+    workingDays: z.number().nonnegative().multipleOf(0.5).nullable(),
   })
   .strict();
 export type LeaveSubjectView = z.infer<typeof LeaveSubjectView>;

@@ -9,6 +9,7 @@ import type {
   ApprovalStatus,
   AuditEvent,
   Employee,
+  Holiday,
   LeaveRequest,
   Team,
 } from '../../domain/schemas.js';
@@ -18,6 +19,7 @@ import {
   type ApprovalStore,
   type AuditReader,
   type EmployeeDirectory,
+  type HolidayReader,
   type ResolvedSubject,
   type SubjectResolver,
 } from './ports.js';
@@ -141,5 +143,19 @@ export class InMemoryAuditReader implements AuditReader, AuditSummaryReader {
     return Promise.resolve(
       this.sink.events.filter((e) => e.traceId === traceId).map((e) => structuredClone(e)),
     );
+  }
+}
+
+/** Holidays with from <= date <= to, both ends inclusive, in date order (spec approval-queue-ui). */
+export class InMemoryHolidayReader implements HolidayReader {
+  private readonly holidays: Holiday[];
+
+  constructor(holidays: Holiday[]) {
+    this.holidays = structuredClone(holidays);
+  }
+
+  getHolidays(range: { from: string; to: string }): Promise<Holiday[]> {
+    const inRange = this.holidays.filter((h) => h.date >= range.from && h.date <= range.to);
+    return Promise.resolve(structuredClone(inRange).sort((a, b) => a.date.localeCompare(b.date)));
   }
 }

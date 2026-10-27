@@ -3,8 +3,11 @@
 // the identical object the server module exports. The import graph stays zod-only (rule 17).
 export { ChatBody, ChatResponse, ConversationView } from '../../server/src/chat/schemas.js';
 export {
+  ActionBody,
+  ActionResponse,
   ApprovalItemView,
   ListApprovalsResponse,
+  MAX_COMMENT_CHARS,
   TraceResponse,
 } from '../../server/src/http/approvals/schemas.js';
 export { ErrorBody, ErrorCode } from '../../server/src/http/errors.js';

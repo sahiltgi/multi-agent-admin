@@ -457,3 +457,6 @@ None open. The owner replied "approved" on 2026-10-26, accepting every proposed 
 - **OQ-5 (message history), answered (i):** keep web-shell's in-memory turn list, cleared on reload and on a switch. No `GET /conversations/:id` and no stored `conversationId`. Applied in rule 2, AT-2 and EV-12.
 - **OQ-6 (refresh triggers and switch), answered:** fetch on mount, on a persona switch, and once after a `leave_submitted` turn. No polling and no manual refresh. A switch drops turns, the list and any open section, aborts their requests, and refetches only the list. Applied in rules 9 and 10, and AT-12 and AT-14.
 - **OQ-7 (section presentation), answered:** an inline panel (a `region` named by the section ID) below the turn list, with a `Close` button. No route, no modal, no focus move. Clicking the open chip keeps it open. Applied in rule 4 and AT-5.
+
+- **Amended by specs/approval-queue-ui.md (2026-10-27):** a sanctioned rescope, owner-approved under approval-queue-ui OQ-6.
+  - E-1: rule 12 and AT-17. The exact facade export list becomes approval-queue-ui W-7's list (adds `ActionBody`, `ActionResponse` and `MAX_COMMENT_CHARS`). The "no `LeaveRequestStatus`" check stays.

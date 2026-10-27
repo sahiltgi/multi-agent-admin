@@ -43,6 +43,8 @@ function deps(): ApprovalApiDeps {
     clock: { nowIso: () => '2026-10-15T10:00:00Z' },
     idGen: () => `ae-${String(++n)}`,
     onboarding: new InMemoryOnboardingStore(),
+    // Amended by approval-queue-ui Q-1: every ApprovalApiDeps carries a holiday reader.
+    holidays: { getHolidays: () => Promise.resolve([]) },
   };
 }
 

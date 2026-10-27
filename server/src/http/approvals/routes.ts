@@ -6,10 +6,13 @@ import {
   OnboardingDeviation,
   applyDeviation,
 } from '../../domain/onboarding.js';
+import { z } from 'zod';
+import { countWorkingDays } from '../../domain/calendar.js';
 import type { PolicyQuestion } from '../../domain/qa.js';
 import {
   ApprovalItem,
   AuditEvent,
+  Holiday,
   type ApprovalStatus,
   type LeaveRequest,
 } from '../../domain/schemas.js';
@@ -49,7 +52,31 @@ async function load(deps: ApprovalApiDeps, item: ApprovalItem): Promise<Loaded> 
   return { ctx: { item, owner }, resolved };
 }
 
-function subjectView(leave: LeaveRequest): LeaveSubjectView {
+const Holidays = z.array(Holiday);
+
+/**
+ * Working days of a stored request, computed at read time (spec approval-queue-ui, rules 17–19).
+ * Any read, parse or count failure gives null: the number is never guessed (HARD RULE 6).
+ */
+async function workingDaysOf(deps: ApprovalApiDeps, leave: LeaveRequest): Promise<number | null> {
+  try {
+    const raw = await deps.holidays.getHolidays({ from: leave.startDate, to: leave.endDate });
+    const holidays = Holidays.parse(raw);
+    return countWorkingDays(
+      {
+        startDate: leave.startDate,
+        endDate: leave.endDate,
+        ...(leave.startHalf === undefined ? {} : { startHalf: leave.startHalf }),
+        ...(leave.endHalf === undefined ? {} : { endHalf: leave.endHalf }),
+      },
+      holidays.map((h) => h.date),
+    );
+  } catch {
+    return null;
+  }
+}
+
+function subjectView(leave: LeaveRequest, workingDays: number | null): LeaveSubjectView {
   return {
     requestId: leave.id,
     employeeId: leave.employeeId,
@@ -59,6 +86,7 @@ function subjectView(leave: LeaveRequest): LeaveSubjectView {
     ...(leave.startHalf === undefined ? {} : { startHalf: leave.startHalf }),
     ...(leave.endHalf === undefined ? {} : { endHalf: leave.endHalf }),
     status: leave.status,
+    workingDays,
   };
 }
 
@@ -88,10 +116,15 @@ function deviationView(d: OnboardingDeviation): DeviationView {
   };
 }
 
-function viewOf(actor: Actor, { ctx, resolved }: Loaded): ApprovalItemView {
+async function viewOf(
+  deps: ApprovalApiDeps,
+  actor: Actor,
+  { ctx, resolved }: Loaded,
+): Promise<ApprovalItemView> {
+  const leave = resolved?.leave ?? null;
   return {
     item: ctx.item,
-    subject: resolved?.leave == null ? null : subjectView(resolved.leave),
+    subject: leave === null ? null : subjectView(leave, await workingDaysOf(deps, leave)),
     gateResult: resolved?.gateResult ?? null,
     question:
       ctx.item.kind === 'escalation' && resolved?.policyQuestion != null
@@ -167,13 +200,15 @@ export function createApprovalRoutes(deps: ApprovalApiDeps): RouteDefinition[] {
     body: EmptyBody,
     response: ListApprovalsResponse,
     handler: async ({ actor, query }) => {
-      const views: ApprovalItemView[] = [];
+      const visible: Loaded[] = [];
       for (const item of await deps.approvals.list()) {
         const loaded = await load(deps, item);
         if (!canSee(actor, loaded.ctx)) continue;
         if (query.status !== undefined && item.status !== query.status) continue;
-        views.push(viewOf(actor, loaded));
+        visible.push(loaded);
       }
+      // Views read holidays for working days; the reads are independent, so they run together.
+      const views = await Promise.all(visible.map((loaded) => viewOf(deps, actor, loaded)));
       return { items: views.sort(byCreatedAtThenId) };
     },
   });
@@ -186,7 +221,7 @@ export function createApprovalRoutes(deps: ApprovalApiDeps): RouteDefinition[] {
     body: EmptyBody,
     response: GetApprovalResponse,
     handler: async ({ actor, params }) =>
-      viewOf(actor, await loadVisible(deps, actor, params.itemId)),
+      viewOf(deps, actor, await loadVisible(deps, actor, params.itemId)),
   });
 
   const act = defineRoute({

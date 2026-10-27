@@ -350,6 +350,8 @@ Answers to the former open questions, approved by the owner on 2026-10-14. D-n a
 - **D-16 (own overlapping request):** Dropped. Rule 19, AT-71, EV-19, `ownRequests` and `requestId` are removed. A self-overlap check needs its own spec once a tool supplies the data.
 - **D-17 (requester role):** The gate stays role-agnostic. Routing a manager's or hr_admin's own leave is outside the gate.
 - **D-18 (evals):** As in leave-policy D-11, EV-1 to EV-21 (minus EV-19) are implemented once the Leave Agent exists, with the committed v1 values and the seed. Unit tests cover every rule now.
+- **Amended by specs/approval-queue-ui.md (2026-10-27):** a sanctioned rescope, owner-approved under approval-queue-ui OQ-6.
+  - L-1: rule 9. The working-day count now lives in `server/src/domain/calendar.ts` (`countWorkingDays`), and the gate calls it for `dates_valid`, balance, consecutive days and notice. Verdicts, rule results and messages don't change.
 
 ## Open questions
 

@@ -252,6 +252,8 @@ function makeWorld(opts: WorldOptions = {}) {
     clock,
     idGen: () => `ae-${String((state.approvalCounter += 1)).padStart(3, '0')}`,
     onboarding: new InMemoryOnboardingStore(),
+    // Amended by approval-queue-ui Q-1: every ApprovalApiDeps carries a holiday reader.
+    holidays: { getHolidays: () => Promise.resolve([]) },
   };
   return { intakeDeps, approvalDeps, sink, log, state, leaves, approvals, classify, runLeave };
 }

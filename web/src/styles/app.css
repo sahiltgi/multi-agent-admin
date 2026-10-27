@@ -275,6 +275,152 @@ button.primary:disabled {
   font-size: 1rem;
 }
 
+/* ---- approval queue (spec approval-queue-ui, rule 22): hairline cards, no shadows ---- */
+.queue-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.queue-tab {
+  padding: 6px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--ink-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.queue-tab[aria-selected='true'] {
+  color: var(--ink);
+  border-bottom-color: var(--ink); /* ink, not accent: the accent marks only the route tab */
+}
+
+.cards {
+  display: grid;
+  gap: 16px;
+}
+
+.card {
+  padding: 16px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--surface);
+}
+
+.card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 16px;
+  margin: 0 0 12px;
+}
+
+.fields dt {
+  color: var(--ink-muted);
+}
+
+.fields dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pre {
+  white-space: pre-wrap;
+}
+
+.rule-rows,
+.plain-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.rule-row {
+  display: grid;
+  grid-template-columns: 1.5em max-content 1fr;
+  gap: 8px;
+  padding: 2px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.rule-row:last-child {
+  border-bottom: 0;
+}
+
+.rule-glyph[data-passed='true'] {
+  color: var(--tone-neutral);
+}
+
+.rule-glyph[data-passed='false'] {
+  color: var(--tone-amber);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.action-bar {
+  display: grid;
+  gap: 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
+}
+
+.action-bar textarea {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  resize: vertical;
+}
+
+.action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+button.action {
+  padding: 6px 14px;
+  border: 1px solid var(--ink-muted);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+button.action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .fields,
+  .rule-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ---- phone width ---- */
 @media (max-width: 640px) {
   .header {
