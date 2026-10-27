@@ -17,12 +17,11 @@ import {
   type LeaveRequest,
 } from '../../domain/schemas.js';
 import { redactText } from '../../lib/redact.js';
-import { SUMMARY_KINDS } from '../../metrics/ports.js';
 import { HttpError } from '../errors.js';
 import type { Actor } from '../identity.js';
 import { defineRoute, type RouteDefinition } from '../route.js';
 import type { ApprovalApiDeps, ResolvedSubject } from './ports.js';
-import { actDenial, canReadTrace, canSee, type ItemContext } from './rbac.js';
+import { actDenial, canSee, type ItemContext } from './rbac.js';
 import {
   ActionBody,
   ActionResponse,
@@ -40,6 +39,7 @@ import {
   type LeaveSubjectView,
   type PolicyQuestionView,
 } from './schemas.js';
+import { readVisibleTrace } from './trace.js';
 
 interface Loaded {
   ctx: ItemContext;
@@ -145,30 +145,6 @@ async function loadVisible(deps: ApprovalApiDeps, actor: Actor, itemId: string):
   const loaded = await load(deps, item);
   if (!canSee(actor, loaded.ctx)) throw new HttpError('not_found');
   return loaded;
-}
-
-/** Request-summary payloads whose `usage` only hr_admin sees (spec agent-metrics, rule 11). */
-const USAGE_KINDS: ReadonlySet<unknown> = new Set(SUMMARY_KINDS);
-
-/**
- * spec policy-qa DD-24 (rule 23): what a reader who isn't hr_admin gets from a trace. Keyed on
- * event content, so it holds even when no PolicyQuestion was kept. The Q&A gate result (verdict,
- * topic names) and HR's actions on escalation items are dropped, and the per-turn qaVerdict is
- * masked. A summary event's `usage` is dropped (spec agent-metrics, rule 11). Leave gate results
- * and leave decisions are unchanged.
- */
-function askerView(e: AuditEvent): AuditEvent[] {
-  const p = e.payload;
-  if (p.kind === 'qa_gate_result') return [];
-  if (e.eventType === 'human_action' && p.itemKind === 'escalation') return [];
-  let payload = p;
-  if (USAGE_KINDS.has(p.kind) && 'usage' in payload) {
-    payload = Object.fromEntries(Object.entries(payload).filter(([key]) => key !== 'usage'));
-  }
-  if ((p.kind === 'intake_outcome' || p.kind === 'chat_turn') && 'qaVerdict' in p) {
-    payload = { ...payload, qaVerdict: null };
-  }
-  return [payload === p ? e : { ...e, payload }];
 }
 
 function byCreatedAtThenId(a: ApprovalItemView, b: ApprovalItemView): number {
@@ -445,20 +421,10 @@ export function createApprovalRoutes(deps: ApprovalApiDeps): RouteDefinition[] {
     query: EmptyParams,
     body: EmptyBody,
     response: TraceResponse,
-    handler: async ({ actor, params }) => {
-      const ownerId = await deps.subjects.ownerOfRequest(params.requestId);
-      if (ownerId === null) throw new HttpError('not_found');
-      const owner = await deps.directory.getById(ownerId);
-      // A denied read looks the same as an unknown request (OQ-1).
-      const isLeave = await deps.subjects.isLeaveRequest(params.requestId);
-      if (!canReadTrace(actor, owner, isLeave)) throw new HttpError('not_found');
-      const events = (await deps.auditReader.listByTrace(params.requestId))
-        .map((e) => AuditEvent.parse(e))
-        .flatMap((e) => (actor.role === 'hr_admin' ? [e] : askerView(e)));
-      // Array sort is stable, so events at the same instant keep insertion order.
-      events.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
-      return { requestId: params.requestId, events };
-    },
+    handler: async ({ actor, params }) => ({
+      requestId: params.requestId,
+      events: await readVisibleTrace(deps, actor, params.requestId),
+    }),
   });
 
   return [list, get, act, trace];

@@ -23,3 +23,9 @@ export { QaVerdict, SectionId } from '../../server/src/domain/qa.js';
 // spec employee-chat, rule 12: My requests and the handbook section view.
 export { MyRequestsResponse } from '../../server/src/intake/schemas.js';
 export { HandbookSectionResponse } from '../../server/src/handbook/schemas.js';
+// spec audit-view, rule 26: the trace timeline, eval history and build notes responses.
+export {
+  BuildNotesResponse,
+  EvalHistoryResponse,
+  TraceTimelineResponse,
+} from '../../server/src/audit-view/schemas.js';

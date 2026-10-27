@@ -69,6 +69,8 @@ export interface BootFiles {
   onboardingAgentTexts: OnboardingAgentTextLoader; // the agent's fixed questions
   onboardingTexts: OnboardingTextLoader; // dispatch's fixed replies
   pricing: Pricing; // evals/pricing.yaml (spec agent-metrics, rule 3); coverage is checked in start.ts
+  // spec audit-view, rules 11 and 16: fixed paths, read per request by the audit view, never at boot.
+  auditViewPaths: { evalResultsDir: string; devMetricsPath: string; aiLogPath: string };
 }
 
 export interface QaBootPaths {
@@ -78,6 +80,10 @@ export interface QaBootPaths {
   onboardingPolicyPath?: string;
   /** Defaults to evals/pricing.yaml next to the prompts directory (spec agent-metrics, rule 3). */
   pricingPath?: string;
+  /** spec audit-view: default to evals/results, docs/dev-metrics.md and AI_LOG.md next to prompts. */
+  evalResultsDir?: string;
+  devMetricsPath?: string;
+  aiLogPath?: string;
 }
 
 /** The committed handbook and QA policy, next to the prompts directory. */
@@ -229,5 +235,10 @@ export async function loadBootFiles(
     onboardingAgentTexts: createOnboardingTextLoader(join(promptsRoot, 'onboarding', 'messages')),
     onboardingTexts: createFileOnboardingTexts(join(promptsRoot, 'onboarding', 'messages')),
     pricing,
+    auditViewPaths: {
+      evalResultsDir: qaPaths.evalResultsDir ?? join(promptsRoot, '..', 'evals', 'results'),
+      devMetricsPath: qaPaths.devMetricsPath ?? join(promptsRoot, '..', 'docs', 'dev-metrics.md'),
+      aiLogPath: qaPaths.aiLogPath ?? join(promptsRoot, '..', 'AI_LOG.md'),
+    },
   };
 }

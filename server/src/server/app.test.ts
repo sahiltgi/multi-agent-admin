@@ -246,6 +246,9 @@ describe('buildApp', () => {
         'PATCH /onboarding/:checklistId/tasks/:taskId',
         'GET /metrics/agents', // spec agent-metrics, rule 12
         'GET /handbook/sections/:id', // spec employee-chat, rule 14
+        'GET /audit/:requestId/timeline', // spec audit-view, rule 1
+        'GET /evals/history', // spec audit-view, rule 10
+        'GET /build-notes', // spec audit-view, rule 15
       ].sort(),
     );
   });

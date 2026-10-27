@@ -443,6 +443,16 @@ Owner decisions made on 2026-10-26. They are settled.
   - W-7: rule 16, AT-25 and AT-26. The facade adds `ActionBody`, `ActionResponse` and `MAX_COMMENT_CHARS`; the literal `1000` appears in no web file.
   - W-8: no D-5-style waiver. approval-queue-ui changes `server/src/`.
 
+- **Amended by specs/audit-view.md (2026-10-27):** a sanctioned rescope, owner-approved under audit-view OQ-9. Each item's full wording is in audit-view rule 28.
+  - A-1: Non-goals and D-4. The trace timeline, the evals view and the "How this was built" tab are in scope for `/audit`. Rendering audit payloads stays out: `/audit` renders only the server-projected `TimelineStep` fields.
+  - A-2: rule 2 and the HTTP calls table. `/audit` calls `GET /audit/{id}/timeline`, `GET /evals/history` and `GET /build-notes` instead of `GET /audit/{id}`.
+  - A-3: rule 4. A switch on `/audit` aborts all three tabs' calls, drops their data, keeps the selected tab and refetches only it (audit-view rule 24).
+  - A-4: rule 10. "Nothing renders HTML or markdown" stays true: documents arrive as structured `DocBlock`s and render as plain elements. No markdown or HTML dependency; AT-18 unchanged.
+  - A-5: rule 12. The audit tab states gain audit-view's fixed texts.
+  - A-6: rule 15. Rows become timeline steps (audit-view rule 20); no `payload` value outside the allowlist reaches the DOM or the response.
+  - A-7: AT-3, AT-4, AT-9, AT-11, AT-14, AT-17, AT-21, AT-24 and EV-2 to EV-4 stub `GET /audit/:id/timeline` with a `TraceTimelineResponse` fixture, and their URL assertions gain `/timeline`.
+  - A-8: rule 16, AT-25 and AT-27. The facade adds `BuildNotesResponse`, `EvalHistoryResponse` and `TraceTimelineResponse`; the walker also visits `server/src/audit-view/schemas.ts`.
+
 How this spec applies the decisions, not owner text: rule 16 adds `ErrorBody`, `ErrorCode` and `MAX_USER_TEXT_CHARS` to the facade (from default rules 8 and 11) and leaves out `MyRequestsResponse` (no route needs it). Rule 15 maps D-4's "kind" to `eventType`. Rule 18 lists `zod` as a web and shared dependency.
 
 ## Open questions
