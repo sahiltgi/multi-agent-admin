@@ -21,6 +21,9 @@
     "seed": "node --env-file-if-exists=.env --import tsx server/src/seeds/cli.ts",
     "start": "node --env-file-if-exists=.env --import tsx server/src/index.ts",
     "evals": "node --env-file-if-exists=.env --import tsx server/src/evals/cli.ts",
+    "e2e": "playwright test",
+    "e2e:server": "node --env-file-if-exists=.env --import tsx server/src/e2e/main.ts",
+    "e2e:record": "E2E_MODEL=record playwright test",
     "dev-metrics": "node --import tsx scripts/dev-metrics.ts",
     "prepare": "husky"
   },
@@ -33,6 +36,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "1.64.1",
     "@types/express": "^5.0.6",
     "@types/node": "^24.19.1",
     "@types/react": "^19.3.0",

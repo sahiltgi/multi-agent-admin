@@ -8,7 +8,7 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default defineConfig(
-  globalIgnores(['**/dist', '**/coverage', '**/node_modules']),
+  globalIgnores(['**/dist', '**/coverage', '**/node_modules', 'playwright-report', 'test-results']),
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,
   tseslint.configs.stylisticTypeChecked,
@@ -35,6 +35,7 @@ export default defineConfig(
     files: [
       '*.{js,mjs,ts}',
       'scripts/**',
+      'e2e/**',
       'server/**',
       'shared/**',
       'web/vite.config.ts',

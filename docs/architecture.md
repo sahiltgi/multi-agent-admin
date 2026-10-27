@@ -61,6 +61,7 @@ server/src/          API server source; *.test.ts files sit next to the code
 web/src/             React UI (specs/web-shell.md, specs/employee-chat.md, specs/approval-queue-ui.md); *.test.ts(x) files sit next to the code
 shared/src/          @hr/shared: re-exports the server's HTTP contract schemas for web (specs/web-shell.md)
 scripts/             repo tooling (test-one.mjs, dev-metrics.ts)
+e2e/                 Playwright demo suite (spec e2e-demo): demo.e2e.ts, helpers.ts, recordings/ (committed model replies); screenshots/ is gitignored
 .claude/hooks/       Claude Code hooks + their tests (human-edited only)
 .claude/agents/      dev subagents: spec-writer, test-writer, eval-drafter, reviewers (docs/dev-agents.md)
 .claude/skills/      workflow skills: new-feature, run-evals, change-policy, fix-issue, open-pr
@@ -108,6 +109,7 @@ Planned in brief §9. Most parts don't exist yet; the notes say which do. Create
 - `server/src/audit-view/`: the read-only audit view routes (spec `specs/audit-view.md`). `GET /audit/:requestId/timeline` reads the trace through `readVisibleTrace` (`server/src/http/approvals/trace.ts`, shared with `GET /audit/:requestId`) and projects each event into an allowlisted, redacted `TimelineStep` (pure `timeline.ts`). `GET /evals/history` and `GET /build-notes` are hr_admin only: they read `evals/results/`, `docs/dev-metrics.md` and `AI_LOG.md` from fixed boot paths (`fs-readers.ts`, the module's only file I/O) and return eval summaries and server-built markdown blocks. No writes, no model calls, no gate imports.
 - `server/src/lib/cost.ts`: the pure pricing rule (`Pricing`, `priceEvents`), shared by the eval runner and the server. Both read `evals/pricing.yaml`, and the server refuses to start if any shipped agent model has no price.
 - `server/src/policies/`: the boot-time policy loader (read, SHA-256, YAML parse, validate). It does I/O, so it sits outside the gate.
+- `server/src/e2e/`: the e2e server entry (spec e2e-demo). `main.ts` runs `runE2e` (`cli.ts`): it derives and seeds a fresh `hr_e2e_<hex>` database, then calls `runServerProcess` with a replay `ModelClient` (`replay-model.ts`, keyed by a normalised request hash over `e2e/recordings/`; a miss throws and never reaches the network) or, owner only, a recording wrapper (`record-model.ts`), and wraps `buildApp` with a frozen-date clock (`clock.ts`, 2026-11-09). `start.ts` is unchanged. Imports nothing from `server/src/gate/`.
 - `server/src/evals/`: the eval runner behind `npm run evals` (spec eval-runner). Runs each case on a fresh in-memory world seeded from the fixtures, through the production agents and `buildApp` called in-process, scores in code (`score/`, never a model), prices each case's model calls from `evals/pricing.yaml`, and writes one `evals/results/<date>-<agent>-<promptVersion>.json` per agent. Imports nothing from `server/src/gate/`.
 - `prompts/`: versioned agent prompts.
 - `evals/`: labeled eval cases, `thresholds.yaml`, `pricing.yaml` and the committed `results/` of each run.
