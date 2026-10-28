@@ -165,13 +165,18 @@ Source for flags, tool names and defaults: the `mongodb-mcp-server` v3.0.5 READM
   - **Why:** there are no UI specs yet. Page content is untrusted input (HARD RULE 3).
   - **Revisit when:** a UI spec needs end-to-end checks. Compare it with plain Playwright tests run from `npm test` first.
 
-## User-scoped connectors
+## User-scoped plugins and connectors
 
-Claude Code sessions can also expose MCP connectors set up at the user level, outside this repo. Examples: claude.ai connectors such as Google Drive, Google Docs, Gmail and Calendar.
+Claude Code sessions can also load plugins and MCP connectors set up at the user level, outside this repo. They aren't in `.mcp.json`, but they reach repo sessions, so they're recorded here. Reviewed on 2026-10-28.
 
-- They aren't in `.mcp.json`, so this inventory doesn't govern them.
-- Don't use them for repo work or HR data.
+| Item                                  | Kind                  | Where it's set                                | Review                                                                                                                                                                | Decision                       |
+| ------------------------------------- | --------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `code-review@claude-plugins-official` | Plugin                | `enabledPlugins` in `~/.claude/settings.json` | Official marketplace. Cached build `f359d43b4060` holds one command (`commands/code-review.md`), `plugin.json`, README and LICENSE. No hooks, scripts or MCP servers. | Keep. Re-check on each update. |
+| claude.ai Google Drive, Google Docs   | Connector (claude.ai) | The owner's claude.ai account                 | Read and write access to the owner's Drive.                                                                                                                           | Not for repo work or HR data.  |
+| claude.ai Gmail, Google Calendar      | Connector (claude.ai) | The owner's claude.ai account                 | Need sign-in before use; mail and calendar are personal data.                                                                                                         | Not for repo work or HR data.  |
+
 - The synthetic-data rule in [AGENTS.md](../AGENTS.md#conventions) still applies.
+- Connector use is guidance only. Accepted for MVP because enforcing it needs `"disableClaudeAiConnectors": true` in `.claude/settings.json`, which only a human edits; the owner decides whether to add it.
 
 ## Adding or changing a server
 

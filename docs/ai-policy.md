@@ -10,9 +10,9 @@ How AI coding tools are allowed to work in this repo. [AGENTS.md](../AGENTS.md) 
   - No MCP servers by default (`enableAllProjectMcpServers: false`).
   - Each server needs the owner's approval and an entry in [mcp-inventory.md](mcp-inventory.md).
   - `.mcp.json` is under CODEOWNERS.
-- **Dangerous modes off:** `bypassPermissions` is disabled. Never run with `--dangerously-skip-permissions`, never disable the sandbox, and never skip git hooks.
+- **Dangerous modes off:** `bypassPermissions` is disabled. Never run with `--dangerously-skip-permissions` and never skip git hooks. The Claude Code sandbox isn't enabled yet (no `sandbox` key in `.claude/settings.json`); turning it on is an owner change.
 - **Human review:** every PR needs a human review before merge, whether AI wrote it or not. That means CODEOWNERS, branch protection, and the PR template's "AI assistance" section.
-- **Owner:** @sahiltgi. **Backup:** TBD (assign before 2026-10-15).
+- **Owner:** @sahiltgi. **Backup:** none. Accepted for MVP because this is a solo project with no second maintainer; name one before anyone else contributes.
 - **Next review:** 2026-11-01.
 
 ## Claude Code permissions (`.claude/settings.json`)
@@ -68,7 +68,7 @@ These apply to every commit, whoever or whatever wrote it. Setup and the commit 
 | `.github/workflows/evals.yml`       | Evals on PRs that touch `prompts/`, `server/src/agents/`, `server/src/gate/` or `policies/` (also `evals/`, the runner and the workflow file), plus nightly. Runs orchestrator and leave for now. Key from the `ANTHROPIC_API_KEY_EVALS` repository secret, results uploaded as an artifact. See [ci-agents.md](ci-agents.md).                     |
 | `.github/workflows/ai-review.yml`   | Optional read-only Claude PR review: comments only, never pushes. Own key in the `ANTHROPIC_API_KEY_REVIEW` repository secret. See [ci-agents.md](ci-agents.md).                                                                                                                                                                                   |
 | `.github/CODEOWNERS`                | Agent instructions, `.claude/`, `.husky/`, `.mcp.json`, `policies/`, `prompts/` and `.github/` need the code owner's review.                                                                                                                                                                                                                       |
-| Branch protection (GitHub settings) | Set by hand. Required checks, code owner review, no force push. Not stored in the repo.                                                                                                                                                                                                                                                            |
+| Branch protection (GitHub settings) | Not in effect. Branch protection and rulesets need GitHub Pro or a public repo (the API returns 403 on this private Free repo), so required checks, code owner review and the force-push block aren't enforced yet.                                                                                                                                |
 
 ## Usage and cost tracking
 
@@ -94,3 +94,17 @@ How we see what AI costs and how it's used, in development and in the app. The C
 
 - **Dev metrics:** `npm run dev-metrics` regenerates [`docs/dev-metrics.md`](dev-metrics.md). It reports AI-assisted commits (any `Co-authored-by` trailer), reverts, hook blocks from the local `.claude/logs/blocked.jsonl`, and AI_LOG entries that added a rule (spec dev-metrics). Hook-block counts come from the machine that generated the file.
 - **App-side metrics:** each request's summary audit event carries `usage` (tokens and USD, priced from `evals/pricing.yaml`), and hr_admin can read the totals from `GET /metrics/agents`. Both are specified in [specs/agent-metrics.md](../specs/agent-metrics.md).
+
+## Data, IP and retention
+
+Facts below were checked against the [Claude Code data usage](https://code.claude.com/docs/en/data-usage.md) page on 2026-10-28.
+
+- **Accounts.** GitHub: personal Free account, private repo. Anthropic: the CI keys `ANTHROPIC_API_KEY_EVALS` and `ANTHROPIC_API_KEY_REVIEW` and the local `.env` key are Console API keys, which fall under the [Commercial Terms](https://www.anthropic.com/legal/commercial-terms). Under those terms Anthropic doesn't train on prompts or code, and standard retention is 30 days.
+  - The owner records here whether interactive Claude Code sessions sign in with that Console org or a Pro/Max plan. Pro/Max falls under the Consumer Terms, where retention and training depend on the claude.ai privacy setting. Accepted for MVP because only the owner can see the account; until it's recorded, treat sessions as consumer-terms and keep the synthetic-data rule strict.
+- **Local transcripts.** Claude Code stores session transcripts in plaintext under `~/.claude/projects/` and deletes them after 30 days (`cleanupPeriodDays`, default 30). They can quote any file a session read, so the `.env` deny rules also keep secrets out of them. `/feedback`, `/bug` and `/share` send a transcript to Anthropic, kept 5 years; don't use them on this repo.
+- **Auto-memory.** Claude Code keeps per-project memory under `~/.claude/projects/<project>/memory/`. The owner reads it at each policy review, deletes anything stale or wrong, and checks that it holds no real data or secrets.
+- **IP and licences.** The repo has no LICENSE file, so it's all rights reserved. Accepted for MVP because choosing a licence is the owner's legal decision and the repo is private.
+  - AI-written code is reviewed like human code and owned by the project.
+  - Don't paste third-party code, docs or handbook text into prompts, rules, fixtures or evals unless its licence allows it. Link to it instead.
+  - New dependencies need a licence check in the PR (MIT, Apache-2.0, BSD and ISC are fine; ask the owner about anything else).
+- **Regulatory scope.** Out of scope while the repo holds synthetic data only. Before any real employee data is used, map the system to the data-protection law that applies (for example GDPR), and record the lawful basis, retention and subject-access process here.
