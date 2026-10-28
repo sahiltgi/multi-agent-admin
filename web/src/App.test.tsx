@@ -500,15 +500,33 @@ describe('shell and identity', () => {
       await loadAudit(user, 'lr-101');
       await waitCalls(5);
       cleanup();
+      // Amended by specs/onboarding-ui.md (S-2): the /onboarding leg loads its list.
+      const before = calls.length;
+      handler = (c) =>
+        c.method === 'GET' && c.url === '/api/onboarding?limit=50'
+          ? json(200, { checklists: [], nextCursor: null })
+          : queueHandler(c);
+      renderApp('/onboarding');
+      await waitCalls(before + 1);
+      await screen.findByText('No active checklists to show.');
+      cleanup();
+      handler = queueHandler;
+      expect(calls.some((c) => c.method === 'GET' && c.url === '/api/onboarding?limit=50')).toBe(
+        true,
+      );
       expect(calls.length).toBeGreaterThanOrEqual(5);
       for (const c of calls) {
         expect(c.headers['x-demo-user']).toBe(IDS[key]);
         expect(Object.keys(c.headers).sort()).toEqual(
-          c.method === 'POST'
+          c.method === 'POST' || c.method === 'PATCH'
             ? ['accept', 'content-type', 'x-demo-user']
             : ['accept', 'x-demo-user'],
         );
-        expect(c.url.includes('?')).toBe(false);
+        // Amended (S-2): only GET /onboarding?limit=50[&cursor=...] has a query string.
+        if (c.url.includes('?')) {
+          expect(c.method).toBe('GET');
+          expect(c.url).toMatch(/^\/api\/onboarding\?limit=50(&cursor=[^&]+)?$/);
+        }
         for (const word of ['employee', 'manager', 'hr_admin', 'Asha', 'Ravi', 'Meera']) {
           expect(c.url.includes(word)).toBe(false);
           expect(Object.values(c.headers).some((v) => v.includes(word))).toBe(false);
@@ -761,9 +779,10 @@ describe('persona switching', () => {
 describe('visibility and routing', () => {
   it('AT-10: nav links per persona come from the persona map', () => {
     const expected = {
+      // Amended by specs/onboarding-ui.md (S-4): the Onboarding link for Ravi and Meera.
       asha: ['Chat'],
-      ravi: ['Chat', 'Queue'],
-      meera: ['Chat', 'Queue', 'Audit'],
+      ravi: ['Chat', 'Queue', 'Onboarding'],
+      meera: ['Chat', 'Queue', 'Onboarding', 'Audit'],
     } as const;
     for (const key of ['asha', 'ravi', 'meera'] as const) {
       setPersona(key);
@@ -1067,6 +1086,15 @@ describe('chat input and states', () => {
     expect(within(region).getByRole('status').textContent).toBe('Loading…');
     listPending.resolve(json(200, { requests: [] }));
     await within(region).findByText('You have no leave requests yet.');
+    cleanup();
+
+    // Amended by specs/onboarding-ui.md (S-5): /onboarding has its own Loading and empty states.
+    const obPending = deferred();
+    handler = () => obPending.promise;
+    renderApp('/onboarding');
+    expect(within(await screen.findByRole('status')).getByText('Loading…')).not.toBeNull();
+    obPending.resolve(json(200, { checklists: [], nextCursor: null }));
+    await screen.findByText('No active checklists to show.');
   });
 });
 

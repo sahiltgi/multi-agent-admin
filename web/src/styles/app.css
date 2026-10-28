@@ -564,3 +564,95 @@ li[data-injection='flagged'] {
     overflow-x: auto;
   }
 }
+
+/* ---- /onboarding (spec onboarding-ui, rule 18): hairline cards, native progress, mono counts ---- */
+.joiner-form {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 24rem);
+  gap: 8px 16px;
+  align-items: center;
+  margin: 16px 0;
+}
+
+.joiner-form .section-title,
+.joiner-form button.primary {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+.joiner-form input,
+.joiner-form select,
+.joiner-form textarea {
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.joiner-form [aria-invalid='true'] {
+  border-color: var(--ink);
+  outline: 1px dashed var(--ink);
+}
+
+.create-result {
+  margin: 16px 0;
+}
+
+.progress-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+progress {
+  width: 10rem;
+  height: 8px;
+  accent-color: var(--ink-muted);
+}
+
+.pending {
+  display: inline-block;
+  margin-bottom: 12px;
+}
+
+.pending-ids {
+  margin-bottom: 12px;
+}
+
+.owner-groups {
+  margin-top: 12px;
+}
+
+.owner-group {
+  padding: 12px 0;
+  border-top: 1px solid var(--rule);
+}
+
+.owner-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.owner-head .section-title {
+  margin: 0;
+}
+
+.task-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+@media (max-width: 640px) {
+  .joiner-form {
+    grid-template-columns: 1fr;
+  }
+}

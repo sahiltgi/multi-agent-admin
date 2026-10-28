@@ -33,6 +33,14 @@ Add a Playwright suite with exactly one test per demo step 1–6 of brief §10, 
 - **D-5 (other scenario rows):** The eval-row scenarios that `specs/web-shell.md`, `specs/employee-chat.md`, `specs/approval-queue-ui.md` and `specs/audit-view.md` defer to "the later e2e spec" stay deferred to a further e2e spec. Those four specs' wording is left as is.
 - **D-6 (step 5 checklist source):** `CreateOnboardingResponse` (`server/src/onboarding/schemas.ts:53`) carries no tasks, so rule 19 reads them with a follow-up `GET /onboarding/:checklistId`. Manager tasks with an `ownerEmployeeId` carry `emp-009`, and buddy tasks carry `emp-010`.
 - **D-7 (env name mismatch):** `.env.example` sets `VITE_API_BASE_URL`, but `web/src/api/env.ts` reads `VITE_API_BASE`. The e2e suite doesn't depend on it, since it uses the default `/api` plus the proxy. The fix is a separate change.
+- **Amended by specs/onboarding-ui.md (2026-10-28):** a sanctioned rescope, owner-approved under onboarding-ui OQ-2. Each item's full wording is in onboarding-ui rule 20.
+  - E-1: Non-goals, "New UI". Becomes "New UI other than the `/onboarding` route of `specs/onboarding-ui.md`". Step 5 uses that screen, then the existing `/audit` view.
+  - E-2: D-1 is replaced. Step 5 goes through `/onboarding` as Meera (`emp-001`, `hr_admin`): the form is filled with `STEP5_BODY`'s values and no notes, the sent body deep-equals `STEP5_BODY`, the `Just added` checklist's owner groups are checked, then Meera's `/audit` Trace is screenshot.
+  - E-3: D-6 is kept. The tasks are read from the UI's own `GET /onboarding/:checklistId` response instead of a separate `api` call.
+  - E-4: rule 19 and the E2E-5 entry are replaced by onboarding-ui rule 19. Screenshots become `step-5-onboarding-checklist` and `step-5-onboarding-trace`. With no `notes`, no model call is made.
+  - E-5: rule 14. The selector examples gain the `/onboarding` labels, `Add new joiner`, `Just added` and the owner group names. The step-5 table row stays.
+  - E-6: rule 21. The e2e code still adds no route, tool, UI, prompt or policy; the `/onboarding` UI comes from `specs/onboarding-ui.md`. The only approval in the suite is still Ravi's click in step 2.
+  - E-7: E2E-all. The screenshot set follows E-4. No other step changes.
 
 ## Inputs and outputs
 

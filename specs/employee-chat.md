@@ -460,3 +460,6 @@ None open. The owner replied "approved" on 2026-10-26, accepting every proposed 
 
 - **Amended by specs/approval-queue-ui.md (2026-10-27):** a sanctioned rescope, owner-approved under approval-queue-ui OQ-6.
   - E-1: rule 12 and AT-17. The exact facade export list becomes approval-queue-ui W-7's list (adds `ActionBody`, `ActionResponse` and `MAX_COMMENT_CHARS`). The "no `LeaveRequestStatus`" check stays.
+
+- **Amended by specs/onboarding-ui.md (2026-10-28):** a sanctioned rescope, owner-approved under onboarding-ui OQ-2. Each item's full wording is in onboarding-ui rule 20.
+  - S-6: rule 12 and AT-17. The exact facade export list gains `ChecklistView`, `CreateOnboardingBody`, `CreateOnboardingResponse`, `ListOnboardingResponse`, `TaskStatusBody`, `TemplateId` and `taskStatus`; each `toBe`s its server export, and the walker also visits the onboarding-ui rule 16 modules.

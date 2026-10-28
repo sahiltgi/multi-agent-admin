@@ -134,26 +134,59 @@ test('E2E-4: injection text is data: flagged, logged, nothing approved', async (
   expect(await approvedCount()).toBe(before);
 });
 
-test('E2E-5: new joiner gets a checklist with owned tasks', async ({ page, request }) => {
-  const meera = api(request, 'meera');
-  const created = await meera.post('/onboarding', {
+// Spec onboarding-ui rule 19 (amends e2e-demo D-1 and rule 19): step 5 goes through /onboarding.
+// The form is filled with STEP5_BODY's values and no notes, so no model call is made and no
+// recording is needed.
+test('E2E-5: new joiner gets a checklist with owned tasks', async ({ page }) => {
+  const STEP5_BODY = {
     newJoinerName: 'Demo Joiner Kestrel', // synthetic
     templateId: 'engineer',
     startDate: '2026-11-30',
     newHireTeam: 'team-b',
     managerEmployeeId: 'emp-009',
     buddyEmployeeId: 'emp-010',
+  };
+  await openAs(page, 'meera', '/onboarding');
+  await page.getByLabel('New joiner name', { exact: true }).fill(STEP5_BODY.newJoinerName);
+  await page.getByLabel('Template', { exact: true }).selectOption(STEP5_BODY.templateId);
+  await page.getByLabel('Start date', { exact: true }).fill(STEP5_BODY.startDate);
+  await page.getByLabel('Team id', { exact: true }).fill(STEP5_BODY.newHireTeam);
+  await page.getByLabel('Manager employee id', { exact: true }).fill(STEP5_BODY.managerEmployeeId);
+  await page
+    .getByLabel('Buddy employee id (optional)', { exact: true })
+    .fill(STEP5_BODY.buddyEmployeeId);
+  // Notes (optional) stays empty.
+
+  // Register both waits before the click, so the UI's follow-up GET cannot be missed.
+  const posted = page.waitForResponse(
+    (r) => new URL(r.url()).pathname === '/api/onboarding' && r.request().method() === 'POST',
+  );
+  const readBack = page.waitForResponse((r) => {
+    const u = new URL(r.url());
+    return (
+      r.request().method() === 'GET' &&
+      /^\/api\/onboarding\/[^/]+$/.test(u.pathname) &&
+      u.search === ''
+    );
   });
-  expect(created.ok()).toBe(true);
-  const body = CreateOnboardingResponse.parse(await created.json());
+  await page.getByRole('button', { name: 'Add new joiner' }).click();
+
+  const postResponse = await posted;
+  expect(postResponse.request().postDataJSON()).toEqual(STEP5_BODY); // no notes, no extra key
+  const body = CreateOnboardingResponse.parse(await postResponse.json());
   if (body.kind !== 'checklist_created') throw new Error(`onboarding returned ${body.kind}`);
   expect(body.verdict).toBe('AUTO');
   expect(body.pendingDeviationIds).toEqual([]);
 
-  // D-6: the create response carries no tasks, so they are read back.
-  const checklist = await meera.get(`/onboarding/${body.checklistId}`);
-  expect(checklist.ok()).toBe(true);
-  const tasks = ChecklistView.parse(await checklist.json()).checklist.tasks;
+  const justAdded = page.getByRole('region', { name: 'Just added', exact: true });
+  await expect(justAdded.getByText('AUTO', { exact: true })).toBeVisible();
+
+  // D-6, kept: the tasks are read from the UI's own GET /onboarding/:checklistId response.
+  const readResponse = await readBack;
+  expect(new URL(readResponse.url()).pathname).toBe(
+    `/api/onboarding/${encodeURIComponent(body.checklistId)}`,
+  );
+  const tasks = ChecklistView.parse(await readResponse.json()).checklist.tasks;
   expect(tasks.length).toBeGreaterThan(0);
   const assignee = { manager: 'emp-009', buddy: 'emp-010' } as const;
   for (const t of tasks) {
@@ -162,6 +195,35 @@ test('E2E-5: new joiner gets a checklist with owned tasks', async ({ page, reque
       expect(t.ownerEmployeeId).toBe(assignee[t.owner]);
     }
   }
+
+  // The four owner regions are visible in order, each holding its tasks' titles.
+  const groupName = { it: 'IT', admin: 'Admin', manager: 'Manager', buddy: 'Buddy' } as const;
+  const owners = ['it', 'admin', 'manager', 'buddy'] as const;
+  const regions = owners.map((o) =>
+    justAdded.getByRole('region', { name: groupName[o], exact: true }),
+  );
+  for (const r of regions) await expect(r).toBeVisible();
+  // Reading order on the page: top to bottom, then left to right.
+  const spots: { y: number; x: number }[] = [];
+  for (const r of regions) {
+    const box = await r.boundingBox();
+    if (box === null) throw new Error('an owner region has no box');
+    spots.push({ y: box.y, x: box.x });
+  }
+  for (let i = 0; i + 1 < spots.length; i += 1) {
+    const a = spots[i];
+    const b = spots[i + 1];
+    if (a === undefined || b === undefined) throw new Error('missing owner region');
+    expect(
+      a.y < b.y || (a.y === b.y && a.x < b.x),
+      `${owners[i] ?? ''} before ${owners[i + 1] ?? ''}`,
+    ).toBe(true);
+  }
+  for (const t of tasks) {
+    const region = justAdded.getByRole('region', { name: groupName[t.owner], exact: true });
+    await expect(region.getByText(t.title, { exact: true }).first()).toBeVisible();
+  }
+  await shot(page, 'step-5-onboarding-checklist');
 
   await openTrace(page, body.requestId);
   await expect(page.locator('li[data-stage]').first()).toBeVisible();

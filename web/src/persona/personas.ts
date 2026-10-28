@@ -3,7 +3,7 @@
 import type { Role } from '@hr/shared';
 import type { PersonaKey } from './storage.js';
 
-export type RouteKey = 'chat' | 'queue' | 'audit';
+export type RouteKey = 'chat' | 'queue' | 'onboarding' | 'audit';
 
 export interface Persona {
   label: string;
@@ -18,13 +18,13 @@ export const PERSONAS = {
     label: 'Ravi · manager',
     employeeId: 'emp-002',
     roleLabel: 'manager',
-    nav: ['chat', 'queue'],
+    nav: ['chat', 'queue', 'onboarding'], // spec onboarding-ui, rule 1
   },
   meera: {
     label: 'Meera · HR',
     employeeId: 'emp-001',
     roleLabel: 'hr_admin',
-    nav: ['chat', 'queue', 'audit'],
+    nav: ['chat', 'queue', 'onboarding', 'audit'],
   },
 } as const satisfies Record<PersonaKey, Persona>;
 

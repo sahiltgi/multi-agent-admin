@@ -4,7 +4,15 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import viteConfig from '../../vite.config.js';
-import { postAction } from './client.js';
+import {
+  getApprovals,
+  getChecklist,
+  getOnboardingList,
+  patchTaskDone,
+  postAction,
+  postChat,
+  postOnboarding,
+} from './client.js';
 import { WebEnv, resolveApiBase } from './env.js';
 
 describe('approval-queue-ui: postAction', () => {
@@ -91,6 +99,119 @@ describe('approval-queue-ui: postAction', () => {
       ac.signal,
     );
     expect(aborted.result).toEqual({ ok: false, kind: 'aborted' });
+  });
+});
+
+// specs/onboarding-ui.md AT-2 (rule 2): request() gains an explicit method and four onboarding calls.
+describe('onboarding-ui: client methods and the four onboarding calls', () => {
+  const reply = (status: number, body: string, type = 'application/json'): Response =>
+    new Response(body, { status, headers: { 'content-type': type } });
+  const opts = { employeeId: 'emp-001', signal: new AbortController().signal };
+  type Recorded = [string, RequestInit];
+  const stub = (impl: () => Promise<Response>) => {
+    const f = vi.fn(impl);
+    vi.stubGlobal('fetch', f);
+    return f;
+  };
+  const first = (f: ReturnType<typeof stub>): Recorded => f.mock.calls[0] as unknown as Recorded;
+  const headerNames = (init: RequestInit): string[] =>
+    Object.keys(init.headers as Record<string, string>).sort();
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('AT-2: postChat and postAction still send POST and getApprovals still sends GET', async () => {
+    const f = stub(() => Promise.resolve(reply(200, '{}')));
+    await postChat({ message: 'hello there' }, opts);
+    expect(first(f)[1].method).toBe('POST');
+    const g = stub(() => Promise.resolve(reply(200, '{}')));
+    await getApprovals(opts);
+    expect(first(g)[1].method).toBe('GET');
+    expect(headerNames(first(g)[1])).toEqual(['accept', 'x-demo-user']);
+    const h = stub(() => Promise.resolve(reply(200, '{}')));
+    await postAction(
+      'ai-001',
+      { action: 'approve', seen: { verdict: 'ROUTE_TO_MANAGER', policyHash: 'a'.repeat(64) } },
+      opts,
+    );
+    expect(first(h)[1].method).toBe('POST');
+  });
+
+  it('AT-2: the four calls use the table URLs, methods and header names, with encoded segments', async () => {
+    const f = stub(() => Promise.resolve(reply(200, '{}')));
+    await getOnboardingList(null, opts);
+    expect(first(f)[0]).toBe('/api/onboarding?limit=50');
+    expect(first(f)[1].method).toBe('GET');
+    expect(headerNames(first(f)[1])).toEqual(['accept', 'x-demo-user']);
+
+    const g = stub(() => Promise.resolve(reply(200, '{}')));
+    await getOnboardingList('c 1/x', opts);
+    expect(first(g)[0]).toBe('/api/onboarding?limit=50&cursor=c%201%2Fx');
+
+    const h = stub(() => Promise.resolve(reply(200, '{}')));
+    await getChecklist('../approvals', opts);
+    expect(first(h)[0]).toBe('/api/onboarding/..%2Fapprovals');
+    expect(first(h)[1].method).toBe('GET');
+
+    const p = stub(() => Promise.resolve(reply(200, '{}')));
+    await postOnboarding(
+      {
+        newJoinerName: 'Demo Joiner Kestrel',
+        templateId: 'engineer',
+        startDate: '2026-11-30',
+        newHireTeam: 'team-b',
+        managerEmployeeId: 'emp-009',
+        buddyEmployeeId: 'emp-010',
+      },
+      opts,
+    );
+    expect(first(p)[0]).toBe('/api/onboarding');
+    expect(first(p)[1].method).toBe('POST');
+    expect(headerNames(first(p)[1])).toEqual(['accept', 'content-type', 'x-demo-user']);
+
+    const t = stub(() => Promise.resolve(reply(200, '{}')));
+    await patchTaskDone('cl-001', 'a/b', opts);
+    expect(first(t)[0]).toBe('/api/onboarding/cl-001/tasks/a%2Fb');
+    expect(first(t)[1].method).toBe('PATCH');
+    expect(headerNames(first(t)[1])).toEqual(['accept', 'content-type', 'x-demo-user']);
+    expect(first(t)[1].body).toBe('{"status":"done"}');
+  });
+
+  it('AT-2: each call maps a bad 200, an HTML 502, a foreign 403 and a rejected fetch to fixed results, with one fetch', async () => {
+    const calls: [string, () => Promise<unknown>][] = [
+      ['list', () => getOnboardingList(null, opts)],
+      ['view', () => getChecklist('cl-001', opts)],
+      [
+        'create',
+        () =>
+          postOnboarding(
+            {
+              newJoinerName: 'Test Joiner A',
+              templateId: 'sales',
+              startDate: '2026-12-01',
+              newHireTeam: 'team-a',
+              managerEmployeeId: 'emp-002',
+              buddyEmployeeId: null,
+            },
+            opts,
+          ),
+      ],
+      ['tick', () => patchTaskDone('cl-001', 'laptop', opts)],
+    ];
+    for (const [name, call] of calls) {
+      const bad = stub(() =>
+        Promise.resolve(reply(200, JSON.stringify({ unexpected: 'leak-xyz' }))),
+      );
+      expect(await call(), name).toEqual({ ok: false, kind: 'invalid_response' });
+      expect(bad).toHaveBeenCalledTimes(1);
+      stub(() => Promise.resolve(reply(502, '<html>leak-502</html>', 'text/html')));
+      expect(await call(), name).toEqual({ ok: false, kind: 'invalid_response' });
+      stub(() => Promise.resolve(reply(403, JSON.stringify({ error: 'nope-raw' }))));
+      expect(await call(), name).toEqual({ ok: false, kind: 'invalid_response' });
+      const down = stub(() => Promise.reject(new TypeError('net-detail')));
+      expect(await call(), name).toEqual({ ok: false, kind: 'network' });
+      expect(down).toHaveBeenCalledTimes(1);
+    }
   });
 });
 

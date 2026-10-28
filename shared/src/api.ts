@@ -18,6 +18,7 @@ export {
   LeaveVerdict,
   OnboardingVerdict,
   Role,
+  TemplateId,
 } from '../../server/src/domain/schemas.js';
 export { QaVerdict, SectionId } from '../../server/src/domain/qa.js';
 // spec employee-chat, rule 12: My requests and the handbook section view.
@@ -29,3 +30,12 @@ export {
   EvalHistoryResponse,
   TraceTimelineResponse,
 } from '../../server/src/audit-view/schemas.js';
+// spec onboarding-ui, rule 16: the /onboarding calls and the one task-status rule.
+export {
+  ChecklistView,
+  CreateOnboardingBody,
+  CreateOnboardingResponse,
+  ListOnboardingResponse,
+  TaskStatusBody,
+} from '../../server/src/onboarding/schemas.js';
+export { taskStatus } from '../../server/src/domain/onboarding.js';

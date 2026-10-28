@@ -24,10 +24,11 @@ describe('persona map', () => {
     expect(DEFAULT_PERSONA).toBe('asha');
   });
 
-  it('AT-10: nav comes from the map: Asha Chat, Ravi Chat and Queue, Meera all three', () => {
+  it('AT-10: nav comes from the map: Asha Chat, Ravi Chat, Queue and Onboarding, Meera all four', () => {
     expect(PERSONAS.asha.nav).toEqual(['chat']);
-    expect(PERSONAS.ravi.nav).toEqual(['chat', 'queue']);
-    expect(PERSONAS.meera.nav).toEqual(['chat', 'queue', 'audit']);
+    // Amended by specs/onboarding-ui.md (S-4, rule 1): Onboarding for Ravi and Meera.
+    expect(PERSONAS.ravi.nav).toEqual(['chat', 'queue', 'onboarding']);
+    expect(PERSONAS.meera.nav).toEqual(['chat', 'queue', 'onboarding', 'audit']);
   });
 
   it('AT-30: persona ids are exactly the seeded ids and labels are display only', () => {
