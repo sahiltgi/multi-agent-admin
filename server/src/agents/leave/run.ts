@@ -186,7 +186,7 @@ export async function runLeaveAgent(
         gate: null,
         summarySource,
         injectionSuspected: flagged,
-        model: LEAVE_CONFIG.model,
+        model: run.model, // the model actually called (spec gemini-fallback, rule 8)
         promptVersion: LEAVE_CONFIG.promptVersion,
       });
       // Rule 14: the last leave event. A sink rejection propagates; no unaudited outcome returns.

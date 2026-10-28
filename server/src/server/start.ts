@@ -4,14 +4,15 @@
 import { fileURLToPath } from 'node:url';
 import type { Express } from 'express';
 import type { ModelClient } from '../agents/schemas.js';
-import { ServerEnv, ServerRuntimeEnv } from '../domain/schemas.js';
+import { resolveModelId, selectProvider } from '../agents/model-provider.js';
+import { NO_MODEL_KEY_MESSAGE, ServerEnv, ServerRuntimeEnv } from '../domain/schemas.js';
 import type { LoadedLeavePolicy } from '../gate/leave-policy.schema.js';
 import { assertDemoIdentityAllowed } from '../http/identity.js';
 import { createScrubber, secretsOfUri } from '../lib/secrets.js';
 import type { MongoHandle } from '../persistence/mongo/connect.js';
 import { PolicyLoadError } from '../policies/load.js';
 import type { ServerParts } from './app.js';
-import { SHIPPED_AGENT_CONFIGS, unpricedModels, type BootFiles } from './boot.js';
+import { SHIPPED_AGENT_CONFIGS, unmappedModels, unpricedModels, type BootFiles } from './boot.js';
 import type { ListeningServer } from './http.js';
 import { systemClock, timerScheduler, uuidIdGen } from './runtime.js';
 
@@ -45,6 +46,29 @@ const PROMPTS_ROOT = fileURLToPath(new URL('../../../prompts', import.meta.url))
 /** Variable names only, never values (rule 9). */
 function issueNames(issues: readonly { path: readonly PropertyKey[] }[]): string {
   return [...new Set(issues.map((i) => String(i.path[0])))].join(', ');
+}
+
+function hasModelKey(env: unknown): boolean {
+  try {
+    selectProvider(env);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Variable names, plus the fixed no-key message when neither model key is set (gemini-fallback, rule 3). */
+function runtimeEnvProblem(
+  issues: readonly { path: readonly PropertyKey[]; message: string }[],
+  env: unknown,
+): string {
+  const others = issues.filter((i) => i.message !== NO_MODEL_KEY_MESSAGE);
+  // Checked directly too: Zod skips the schema's key refinement when another field already failed.
+  const noKey = others.length < issues.length || !hasModelKey(env);
+  return [
+    ...(others.length > 0 ? [issueNames(others)] : []),
+    ...(noKey ? [NO_MODEL_KEY_MESSAGE] : []),
+  ].join('; ');
 }
 
 function messageOf(err: unknown): string {
@@ -93,11 +117,14 @@ export async function startServer(deps: StartDeps): Promise<number> {
   // 2. The rest of the env (rule 9).
   const parsed = ServerRuntimeEnv.safeParse(deps.env);
   if (!parsed.success) {
-    stderr(`Invalid server environment: ${issueNames(parsed.error.issues)}`);
+    stderr(`Invalid server environment: ${runtimeEnvProblem(parsed.error.issues, deps.env)}`);
     return 1;
   }
   const env = parsed.data;
-  const scrub = createScrubber([...secretsOfUri(env.MONGODB_URI), env.ANTHROPIC_API_KEY]);
+  // Every present model key is scrubbed, whichever provider runs (gemini-fallback, rule 3).
+  const keys = [env.ANTHROPIC_API_KEY, env.GEMINI_API_KEY].filter((k) => k !== undefined);
+  const scrub = createScrubber([...secretsOfUri(env.MONGODB_URI), ...keys]);
+  const provider = selectProvider(env);
 
   // 3. Refuse production before any connection, app or port (rule 11).
   try {
@@ -116,8 +143,21 @@ export async function startServer(deps: StartDeps): Promise<number> {
     stderr(scrub(`startup: prompt files failed: ${messageOf(err)}`));
     return 1;
   }
+  // gemini-fallback, rule 6: every shipped model must map on Gemini, and pricing is checked on the
+  // ids actually called.
+  const unmapped = unmappedModels(provider, SHIPPED_AGENT_CONFIGS);
+  if (unmapped.length > 0) {
+    for (const { model: m, agentId } of unmapped) {
+      stderr(scrub(`startup: no gemini model mapped for ${m} (agent ${agentId})`));
+    }
+    return 1;
+  }
+  const resolved = SHIPPED_AGENT_CONFIGS.map((c) => ({
+    ...c,
+    model: resolveModelId(provider, c.model),
+  }));
   // spec agent-metrics, rule 4: a running server never meets an unpriced shipped model.
-  const unpriced = unpricedModels(boot.pricing, SHIPPED_AGENT_CONFIGS);
+  const unpriced = unpricedModels(boot.pricing, resolved);
   if (unpriced.length > 0) {
     for (const { model: m, agentId } of unpriced) {
       stderr(scrub(`startup: pricing has no entry for model ${m} (agent ${agentId})`));

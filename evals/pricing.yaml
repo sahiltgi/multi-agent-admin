@@ -1,13 +1,16 @@
 # Model prices for cost reporting (spec eval-runner, rules 24, 25; D-20, D-21, D-25; spec
-# agent-metrics, rules 3, 4). Read by `npm run evals` and by the server at startup, which refuses to
-# start without an entry for every shipped agent model and prices each request's audit `usage` from
-# it. USD per million tokens, Anthropic first-party API rates. Cost is reported only, never
+# agent-metrics, rules 3, 4; spec gemini-fallback, rule 21). Read by `npm run evals` and by the
+# server at startup, which refuse to start without an entry for every resolved shipped model (the
+# Claude ids, or their Gemini mapping when only GEMINI_API_KEY is set) and price each request's audit
+# `usage` from it. USD per million tokens, Anthropic first-party API rates for Claude. Cost is reported only, never
 # enforced. Whoever changes a shipped model updates this file in the same change (D-25).
 # claude-haiku-5-5 is $0.10/$0.50 for prompts up to 100K tokens ($0.50/$2.50 above); orchestrator
 # prompts stay far below that, so the lower tier is used.
 version: 1
-asOf: '2026-10-06'
+asOf: '2026-10-28' # the Gemini entry was checked on this date
 currency: USD
 models:
   claude-sonnet-5-5: { inputPerMTok: 2, outputPerMTok: 10 } # leave, policy_qa, onboarding
   claude-haiku-5-5: { inputPerMTok: 0.1, outputPerMTok: 0.5 } # orchestrator
+  # Gemini fallback (D-4, D-14): $0 holds on the free tier only; a billed key would understate cost.
+  gemini-3.5-flash-lite: { inputPerMTok: 0, outputPerMTok: 0 } # every agent, when only GEMINI_API_KEY is set

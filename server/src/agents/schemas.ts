@@ -3,6 +3,7 @@
 // runtime.ts re-exports everything here.
 import { z } from 'zod';
 import { Id, Role } from '../domain/schemas.js';
+import { UnmappedModelError } from './gemini-models.js';
 
 // ---- primitives ----
 // 'onboarding_notes': the notes-mode Onboarding Agent behind POST /onboarding (spec onboarding-api, rule 4).
@@ -111,6 +112,23 @@ export type ToolUseBlock = z.infer<typeof ToolUseBlock>;
 
 export interface ModelClient {
   create(req: ModelRequest, opts: { signal: AbortSignal; timeout: number }): Promise<unknown>;
+  /** The model id actually called for a shipped config id; absent means identity (spec gemini-fallback, rule 8). */
+  resolveModel?: (requested: string) => string;
+}
+
+/**
+ * The model id a client actually calls for a shipped config id (spec gemini-fallback, D-5). An
+ * unmapped id is sent as is: the Gemini adapter rejects any id it doesn't serve before any call
+ * (rule 9), so the run fails closed with an audit trail, never a rejection that skips the audit
+ * (HARD RULE 6).
+ */
+export function actualModel(client: ModelClient, requested: string): string {
+  try {
+    return client.resolveModel?.(requested) ?? requested;
+  } catch (err) {
+    if (err instanceof UnmappedModelError) return requested;
+    throw err;
+  }
 }
 
 // ---- RunInput ----

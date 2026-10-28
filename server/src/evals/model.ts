@@ -29,6 +29,8 @@ export function watchModel(inner: ModelClient): WatchedModel {
         throw err;
       }
     },
+    // The model actually called is recorded, not the config id (spec gemini-fallback, rule 8).
+    ...(inner.resolveModel === undefined ? {} : { resolveModel: inner.resolveModel }),
   };
   return { client, failure: () => failure, toolNames: () => [...tools] };
 }

@@ -6,7 +6,7 @@ import { AuditEvent, Holiday, IsoDate, LeaveBalance } from '../../domain/schemas
 import type { LoadedLeavePolicy } from '../../gate/leave-policy.schema.js';
 import { LeaveGateResult, type LeaveGateRequest, type TeamDayCount } from '../../gate/leave.js';
 import type { ToolContext, ToolDefinition } from '../registry.js';
-import type { RuntimeDeps } from '../runtime.js';
+import { actualModel, type RuntimeDeps } from '../runtime.js';
 import type { LeaveToolDescriptions } from '../tool-descriptions.js';
 import { LEAVE_CONFIG } from './config.js';
 import type { LeaveDataPort } from './port.js';
@@ -110,7 +110,7 @@ async function writeGateResult(
     gate, // unredacted: template-only text plus the policy hash (D-16)
     summarySource: null,
     injectionSuspected: runState(deps, ctx.requestId)?.injectionSuspected === true,
-    model: LEAVE_CONFIG.model,
+    model: actualModel(runtime.model, LEAVE_CONFIG.model), // spec gemini-fallback, rule 8
     promptVersion: LEAVE_CONFIG.promptVersion,
   });
   await runtime.audit.write(

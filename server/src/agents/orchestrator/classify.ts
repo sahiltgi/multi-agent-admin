@@ -77,7 +77,7 @@ export async function classifyMessage(
   const label: RouteLabel = choice.source === 'model' ? choice.label : 'unclear';
   const base = {
     requestId: parsed.requestId,
-    model: ORCHESTRATOR_CONFIG.model,
+    model: result.model, // the model actually called (spec gemini-fallback, rule 8)
     promptVersion: ORCHESTRATOR_CONFIG.promptVersion,
     source: choice.source,
     fallbackReason: choice.source === 'fallback' ? choice.reason : null,

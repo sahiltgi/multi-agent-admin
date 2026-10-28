@@ -59,7 +59,12 @@ afterEach(() => {
   }
 });
 
-async function get(w: World, user: string | undefined, query = '') {
+async function get(
+  w: World,
+  user: string | undefined,
+  query = '',
+  extra: Record<string, string> = {},
+) {
   const server = createApp(w.deps, w.routes).listen(0, '127.0.0.1');
   servers.push(server);
   await new Promise<void>((resolve) =>
@@ -69,7 +74,7 @@ async function get(w: World, user: string | undefined, query = '') {
   );
   const addr = server.address();
   if (addr === null || typeof addr === 'string') throw new Error('no port');
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...extra };
   if (user !== undefined) headers['x-demo-user'] = user;
   const r = await fetch(`http://127.0.0.1:${String(addr.port)}/metrics/agents${query}`, {
     headers,
@@ -130,6 +135,16 @@ describe('agent-metrics AT-15: RBAC', () => {
     const res = await get(w, 'emp-001');
     expect(res.status).toBe(200);
     expect(AgentMetricsResponse.safeParse(res.body).success).toBe(true);
+  });
+
+  it('RED-14: role claims in headers and the query never lift an employee to hr_admin', async () => {
+    const spoof = { 'x-role': 'hr_admin', 'x-demo-role': 'hr_admin', 'x-forwarded-user': 'emp-001' };
+    const w = makeWorld();
+    const res = await get(w, 'emp-004', '', spoof);
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual(errorBody('forbidden'));
+    expect((await get(w, 'emp-004', '?role=hr_admin', spoof)).status).toBe(400);
+    expect(w.listByKinds).toHaveBeenCalledTimes(0);
   });
 
   it('AT-15: parsing comes before the role check (employee with ?from=bad is 400)', async () => {

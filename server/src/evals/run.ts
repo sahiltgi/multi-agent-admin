@@ -4,9 +4,15 @@
 // thresholds, 1 = one missed, 2 = setup error with no results file, or a failed write (D-24).
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AnthropicEnv } from '../agents/anthropic-client.js';
+import {
+  NO_MODEL_KEY_MESSAGE,
+  resolveModelId,
+  selectProvider,
+  UnmappedModelError,
+  type Provider,
+} from '../agents/model-provider.js';
 import type { Clock, Scheduler } from '../agents/runtime.js';
-import type { ModelClient } from '../agents/schemas.js';
+import { actualModel, type ModelClient } from '../agents/schemas.js';
 import { loadLeavePolicy } from '../policies/load.js';
 import { fixtures } from '../seeds/fixtures.js';
 import { defaultQaBootPaths, loadBootFiles, type BootFiles } from '../server/boot.js';
@@ -208,8 +214,10 @@ function agentMeta(
   agent: EvalAgent,
   boot: BootFiles,
   policy: Policy,
+  client: ModelClient,
 ): Pick<AgentSummary, 'model' | 'promptVersion' | 'policyVersion' | 'policyHash'> {
-  const { model, promptVersion } = agentConfig(agent);
+  const { promptVersion } = agentConfig(agent);
+  const model = actualModel(client, agentConfig(agent).model); // gemini-fallback, rule 7
   switch (agent) {
     case 'orchestrator':
       return { model, promptVersion, policyVersion: null, policyHash: null };
@@ -245,10 +253,24 @@ export async function runEvals(deps: EvalDeps, agent?: EvalAgent): Promise<EvalO
   };
   const agents: readonly EvalAgent[] = agent === undefined ? EVAL_AGENTS : [agent];
 
-  // The key comes first and is never printed (rule 3).
-  if (!AnthropicEnv.safeParse(deps.env).success) {
-    return fail('ANTHROPIC_API_KEY is missing or empty. Set it in .env (see .env.example).');
+  // The key comes first and is never printed (rule 3; gemini-fallback, rule 4).
+  let provider: Provider;
+  try {
+    provider = selectProvider(deps.env);
+  } catch {
+    return fail(NO_MODEL_KEY_MESSAGE);
   }
+  // Pricing is checked on the ids actually called (gemini-fallback, rule 7).
+  const resolve = (model: string, a: EvalAgent): string => {
+    try {
+      return resolveModelId(provider, model);
+    } catch (err) {
+      if (err instanceof UnmappedModelError) {
+        throw new SetupError(`no gemini model mapped for ${model} (agent ${a}).`);
+      }
+      throw err;
+    }
+  };
   let thresholds: ReturnType<typeof readThresholds>;
   let pricing: ReturnType<typeof readPricing>;
   let cases: LoadedCase[];
@@ -256,7 +278,7 @@ export async function runEvals(deps: EvalDeps, agent?: EvalAgent): Promise<EvalO
   let policy: Policy;
   try {
     thresholds = readThresholds(deps.evalsDir);
-    pricing = readPricing(deps.evalsDir, requiredModels(agents));
+    pricing = readPricing(deps.evalsDir, requiredModels(agents, resolve));
     cases = readCases(deps.evalsDir, agents);
   } catch (err) {
     if (err instanceof SetupError) return fail(err.message);
@@ -305,7 +327,7 @@ export async function runEvals(deps: EvalDeps, agent?: EvalAgent): Promise<EvalO
       agent: a,
       summary: {
         agent: a,
-        ...agentMeta(a, boot, policy),
+        ...agentMeta(a, boot, policy, deps.model),
         ...buckets[a],
         escalation,
         tokens,

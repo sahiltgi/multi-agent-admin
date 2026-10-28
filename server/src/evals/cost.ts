@@ -22,15 +22,21 @@ export function agentConfig(agent: EvalAgent): { model: string; promptVersion: s
 
 /**
  * Every model a run of these agents can call, mapped to an agent that needs it. policy_qa and
- * onboarding cases go through the app, whose intake calls the orchestrator first (D-21).
+ * onboarding cases go through the app, whose intake calls the orchestrator first (D-21). `resolve`
+ * maps a shipped id to the model actually called (spec gemini-fallback, rule 7); it may throw.
  */
-export function requiredModels(agents: readonly EvalAgent[]): Map<string, EvalAgent> {
+export function requiredModels(
+  agents: readonly EvalAgent[],
+  resolve: (model: string, agent: EvalAgent) => string = (m) => m,
+): Map<string, EvalAgent> {
   const out = new Map<string, EvalAgent>();
+  const need = (model: string, agent: EvalAgent): void => {
+    const id = resolve(model, agent);
+    if (!out.has(id)) out.set(id, agent);
+  };
   for (const agent of agents) {
-    if (!out.has(agentConfig(agent).model)) out.set(agentConfig(agent).model, agent);
-    if ((agent === 'policy_qa' || agent === 'onboarding') && !out.has(ORCHESTRATOR_CONFIG.model)) {
-      out.set(ORCHESTRATOR_CONFIG.model, agent);
-    }
+    need(agentConfig(agent).model, agent);
+    if (agent === 'policy_qa' || agent === 'onboarding') need(ORCHESTRATOR_CONFIG.model, agent);
   }
   return out;
 }

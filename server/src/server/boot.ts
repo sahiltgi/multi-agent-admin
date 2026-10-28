@@ -7,6 +7,8 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
+import { GEMINI_MODEL_MAP } from '../agents/gemini-models.js';
+import type { Provider } from '../agents/model-provider.js';
 import type { AgentConfig } from '../agents/schemas.js';
 import { POLICY_QA_CONFIG } from '../agents/policy_qa/config.js';
 import { createFileQaTexts, QA_TEXTS, type QaTextLoader } from '../agents/policy_qa/texts.js';
@@ -119,6 +121,17 @@ export const SHIPPED_AGENT_CONFIGS: readonly PricedAgent[] = [
   ONBOARDING_CONFIG,
   ONBOARDING_NOTES_CONFIG,
 ];
+
+/** Pure: each config with no Gemini mapping when Gemini runs, in config order (spec gemini-fallback, rule 6). */
+export function unmappedModels(
+  provider: Provider,
+  configs: readonly PricedAgent[],
+): { agentId: string; model: string }[] {
+  if (provider === 'anthropic') return [];
+  return configs
+    .filter((c) => !Object.hasOwn(GEMINI_MODEL_MAP, c.model))
+    .map((c) => ({ agentId: c.agentId, model: c.model }));
+}
 
 /** Pure: each config whose model has no pricing entry, in config order. */
 export function unpricedModels(

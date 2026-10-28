@@ -158,7 +158,7 @@ export async function runOnboardingNotesAgent(
         escalation: result.kind === 'escalated' ? result.reason : null,
         deviationCount: result.kind === 'proposals' ? result.deviations.length : 0,
         injectionSuspected: flagged,
-        model: ONBOARDING_NOTES_CONFIG.model,
+        model: run.model, // the model actually called (spec gemini-fallback, rule 8)
         promptVersion: ONBOARDING_NOTES_CONFIG.promptVersion,
       }),
     );

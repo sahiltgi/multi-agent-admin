@@ -4,7 +4,7 @@
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { createAnthropicClient } from '../agents/anthropic-client.js';
+import { createModelClient, resolveModelId, selectProvider } from '../agents/model-provider.js';
 import type { ModelClient } from '../agents/schemas.js';
 import { systemClock, timerScheduler } from '../server/runtime.js';
 import { runEvals, type EvalDeps } from './run.js';
@@ -28,12 +28,14 @@ function gitCommit(cwd: string): string | null {
   return /^[0-9a-f]{40}$/.test(sha) ? sha : null;
 }
 
-function productionDeps(): EvalDeps {
+export function productionDeps(): EvalDeps {
   const repo = fileURLToPath(new URL('../../../', import.meta.url));
   let client: ModelClient | undefined;
-  // Created on first use: runEvals checks the key before any model call.
+  // Created on first use: runEvals checks the key before any model call. The provider is chosen
+  // from the env (spec gemini-fallback, rule 2), and ids resolve without building the client (rule 8).
   const model: ModelClient = {
-    create: (req, opts) => (client ??= createAnthropicClient(process.env)).create(req, opts),
+    create: (req, opts) => (client ??= createModelClient(process.env)).create(req, opts),
+    resolveModel: (id) => resolveModelId(selectProvider(process.env), id),
   };
   return {
     env: process.env,

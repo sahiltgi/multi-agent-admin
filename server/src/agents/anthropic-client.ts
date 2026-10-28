@@ -3,6 +3,7 @@
 // and never appears in an error message, log line or return value.
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
+import { GeminiApiError, GeminiProtocolError } from './gemini-client.js';
 import type { ModelClient, ModelRequest } from './schemas.js';
 
 // Not strict: process.env holds many unrelated variables.
@@ -21,6 +22,9 @@ const isUnavailableStatus = (status: number): boolean =>
  * status and a generic name, so they are recognised by class. Reads no message text.
  */
 export function isModelUnavailable(err: unknown): boolean {
+  // The Gemini adapter classifies its own failures (spec gemini-fallback, rule 19).
+  if (err instanceof GeminiApiError) return err.unavailable;
+  if (err instanceof GeminiProtocolError) return false;
   if (err instanceof Anthropic.APIConnectionError || err instanceof Anthropic.APIUserAbortError) {
     return true;
   }

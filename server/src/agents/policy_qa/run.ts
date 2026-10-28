@@ -8,7 +8,7 @@ import { redactText } from '../../lib/redact.js';
 import type { AuditSink } from '../audit.js';
 import type { PromptLoader } from '../prompts.js';
 import { invoke, raceAbort, type Clock, type Scheduler } from '../runtime.js';
-import { ModelRequest, type ModelClient } from '../schemas.js';
+import { actualModel, ModelRequest, type ModelClient } from '../schemas.js';
 import { wrapUntrusted } from '../untrusted.js';
 import { POLICY_QA_CONFIG } from './config.js';
 import {
@@ -98,6 +98,8 @@ export async function runPolicyQa(
   const { requestId, question } = PolicyQaInput.parse(input);
   const gate = deps.evaluateQa ?? evaluateQa;
   const cfg = POLICY_QA_CONFIG;
+  // The model actually called is the one sent and recorded (spec gemini-fallback, rule 8).
+  const calledModel = actualModel(deps.model, cfg.model);
   const provenance = {
     policyVersion: deps.policy.policyVersion,
     policyHash: deps.policy.policyHash,
@@ -145,7 +147,7 @@ export async function runPolicyQa(
       kind: 'qa_model_call',
       requestId,
       agent: cfg.agentId,
-      model: cfg.model,
+      model: calledModel,
       promptVersion: cfg.promptVersion,
       input: redactText(question),
       ...p,
@@ -170,7 +172,7 @@ export async function runPolicyQa(
 
     // Rule 14: nothing that varies per request sits in system or the document block.
     const request = ModelRequest.parse({
-      model: cfg.model,
+      model: calledModel,
       system: prompt.text,
       messages: [
         {
