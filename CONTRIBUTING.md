@@ -58,7 +58,7 @@ Run from the repo root. These are the only scripts defined in the `package.json`
 
 - Path-scoped rules in `.claude/rules/` (`gate.md`, `agents.md`, `web.md`) load when Claude reads or edits matching files.
 - Dev subagents are in `.claude/agents/` (see [docs/dev-agents.md](docs/dev-agents.md)).
-- Workflow skills are in `.claude/skills/`: `/new-feature`, `/change-policy`, `/fix-issue`, and the manual-only `/run-evals` (spends API credit) and `/open-pr`.
+- Workflow skills are in `.claude/skills/`: `/new-feature`, `/change-policy`, `/fix-issue`, `/review-pr`, and the manual-only `/run-evals` (spends API credit) and `/open-pr`.
 - Personal, uncommitted notes go in `CLAUDE.local.md` (gitignored).
 
 Keep situational guidance out of AGENTS.md and CLAUDE.md. Put it in a path-scoped rule, a skill or a doc.
