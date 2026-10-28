@@ -9,6 +9,7 @@ import { PersonaProvider } from './persona/PersonaProvider.js';
 import { Audit } from './routes/Audit.js';
 import { Chat } from './routes/Chat.js';
 import { NotFound } from './routes/NotFound.js';
+import { Onboarding } from './routes/Onboarding.js';
 import { Queue } from './routes/Queue.js';
 
 function Shell() {
@@ -31,6 +32,7 @@ function Shell() {
           <Route path="/" element={<Navigate to="/chat" replace />} />
           <Route path="/chat" element={<Chat key={id} />} />
           <Route path="/queue" element={<Queue key={id} />} />
+          <Route path="/onboarding" element={<Onboarding key={id} />} />
           <Route
             path="/audit"
             element={

@@ -5,15 +5,19 @@ import {
   BuildNotesResponse,
   ChatBody,
   ChatResponse,
+  ChecklistView,
+  CreateOnboardingResponse,
   ErrorBody,
   EvalHistoryResponse,
   HandbookSectionResponse,
   ListApprovalsResponse,
+  ListOnboardingResponse,
   MyRequestsResponse,
+  TaskStatusBody,
   TraceResponse,
   TraceTimelineResponse,
 } from '@hr/shared';
-import type { ActionBody } from '@hr/shared';
+import type { ActionBody, CreateOnboardingBody } from '@hr/shared';
 import { API_BASE } from './env.js';
 
 /** The part of an @hr/shared schema the client uses; zod is imported only in env.ts and storage.ts (rule 16). */
@@ -35,7 +39,9 @@ interface CallOptions {
   signal: AbortSignal;
 }
 
+// spec onboarding-ui, rule 2: the method is explicit, so PATCH can carry a body like POST.
 async function request<T>(
+  method: 'GET' | 'POST' | 'PATCH',
   schema: Parser<T>,
   path: string,
   { employeeId, signal }: CallOptions,
@@ -45,7 +51,7 @@ async function request<T>(
     accept: 'application/json',
     'x-demo-user': employeeId,
   };
-  const init: RequestInit = { method: body === undefined ? 'GET' : 'POST', headers, signal };
+  const init: RequestInit = { method, headers, signal };
   if (body !== undefined) {
     headers['content-type'] = 'application/json';
     init.body = JSON.stringify(body);
@@ -84,11 +90,11 @@ export function postChat(
   input: { message: string; conversationId?: string },
   opts: CallOptions,
 ): Promise<ApiResult<ChatResponse>> {
-  return request(ChatResponse, '/chat', opts, ChatBody.parse(input));
+  return request('POST', ChatResponse, '/chat', opts, ChatBody.parse(input));
 }
 
 export function getApprovals(opts: CallOptions): Promise<ApiResult<ListApprovalsResponse>> {
-  return request(ListApprovalsResponse, '/approvals', opts);
+  return request('GET', ListApprovalsResponse, '/approvals', opts);
 }
 
 // spec approval-queue-ui, rule 13: the body is built with ActionBody.parse by the caller. Never retried.
@@ -97,11 +103,17 @@ export function postAction(
   body: ActionBody,
   opts: CallOptions,
 ): Promise<ApiResult<ActionResponse>> {
-  return request(ActionResponse, `/approvals/${encodeURIComponent(itemId)}/actions`, opts, body);
+  return request(
+    'POST',
+    ActionResponse,
+    `/approvals/${encodeURIComponent(itemId)}/actions`,
+    opts,
+    body,
+  );
 }
 
 export function getTrace(requestId: string, opts: CallOptions): Promise<ApiResult<TraceResponse>> {
-  return request(TraceResponse, `/audit/${encodeURIComponent(requestId)}`, opts);
+  return request('GET', TraceResponse, `/audit/${encodeURIComponent(requestId)}`, opts);
 }
 
 // spec audit-view, rules 19 and 20: the three /audit calls. None has a query string.
@@ -109,20 +121,25 @@ export function getTimeline(
   requestId: string,
   opts: CallOptions,
 ): Promise<ApiResult<TraceTimelineResponse>> {
-  return request(TraceTimelineResponse, `/audit/${encodeURIComponent(requestId)}/timeline`, opts);
+  return request(
+    'GET',
+    TraceTimelineResponse,
+    `/audit/${encodeURIComponent(requestId)}/timeline`,
+    opts,
+  );
 }
 
 export function getEvalHistory(opts: CallOptions): Promise<ApiResult<EvalHistoryResponse>> {
-  return request(EvalHistoryResponse, '/evals/history', opts);
+  return request('GET', EvalHistoryResponse, '/evals/history', opts);
 }
 
 export function getBuildNotes(opts: CallOptions): Promise<ApiResult<BuildNotesResponse>> {
-  return request(BuildNotesResponse, '/build-notes', opts);
+  return request('GET', BuildNotesResponse, '/build-notes', opts);
 }
 
 // spec employee-chat, rule 11: no query string and no employeeId; the server scopes to the actor.
 export function getMyRequests(opts: CallOptions): Promise<ApiResult<MyRequestsResponse>> {
-  return request(MyRequestsResponse, '/my-requests', opts);
+  return request('GET', MyRequestsResponse, '/my-requests', opts);
 }
 
 export function getHandbookSection(
@@ -130,8 +147,48 @@ export function getHandbookSection(
   opts: CallOptions,
 ): Promise<ApiResult<HandbookSectionResponse>> {
   return request(
+    'GET',
     HandbookSectionResponse,
     `/handbook/sections/${encodeURIComponent(sectionId)}`,
     opts,
+  );
+}
+
+// spec onboarding-ui, rules 2 and 7: one page of summaries; the route follows nextCursor itself.
+export function getOnboardingList(
+  cursor: string | null,
+  opts: CallOptions,
+): Promise<ApiResult<ListOnboardingResponse>> {
+  const query = cursor === null ? '' : `&cursor=${encodeURIComponent(cursor)}`;
+  return request('GET', ListOnboardingResponse, `/onboarding?limit=50${query}`, opts);
+}
+
+export function getChecklist(
+  checklistId: string,
+  opts: CallOptions,
+): Promise<ApiResult<ChecklistView>> {
+  return request('GET', ChecklistView, `/onboarding/${encodeURIComponent(checklistId)}`, opts);
+}
+
+// The body is built with CreateOnboardingBody.parse by the caller. Never retried (rule 2).
+export function postOnboarding(
+  body: CreateOnboardingBody,
+  opts: CallOptions,
+): Promise<ApiResult<CreateOnboardingResponse>> {
+  return request('POST', CreateOnboardingResponse, '/onboarding', opts, body);
+}
+
+// spec onboarding-ui, rule 12: "Mark done" only; the server sets completedBy and onBehalfOf.
+export function patchTaskDone(
+  checklistId: string,
+  taskId: string,
+  opts: CallOptions,
+): Promise<ApiResult<ChecklistView>> {
+  return request(
+    'PATCH',
+    ChecklistView,
+    `/onboarding/${encodeURIComponent(checklistId)}/tasks/${encodeURIComponent(taskId)}`,
+    opts,
+    TaskStatusBody.parse({ status: 'done' }),
   );
 }

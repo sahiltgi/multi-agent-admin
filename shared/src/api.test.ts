@@ -23,6 +23,9 @@ import * as intake from '../../server/src/intake/schemas.js';
 import * as handbookSchemas from '../../server/src/handbook/schemas.js';
 // Amended by specs/audit-view.md (A-8): three more facade names from this module.
 import * as auditView from '../../server/src/audit-view/schemas.js';
+// Amended by specs/onboarding-ui.md (S-6): seven more facade names from these modules.
+import * as onboardingApi from '../../server/src/onboarding/schemas.js';
+import * as onboardingDomain from '../../server/src/domain/onboarding.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const API_TS = join(ROOT, 'shared', 'src', 'api.ts');
@@ -36,13 +39,17 @@ const EXPECTED_KEYS = [
   'BuildNotesResponse',
   'ChatBody',
   'ChatResponse',
+  'ChecklistView',
   'ConversationView',
+  'CreateOnboardingBody',
+  'CreateOnboardingResponse',
   'ErrorBody',
   'ErrorCode',
   'EvalHistoryResponse',
   'HandbookSectionResponse',
   'LeaveVerdict',
   'ListApprovalsResponse',
+  'ListOnboardingResponse',
   'MAX_COMMENT_CHARS',
   'MAX_USER_TEXT_CHARS',
   'MyRequestsResponse',
@@ -50,8 +57,11 @@ const EXPECTED_KEYS = [
   'QaVerdict',
   'Role',
   'SectionId',
+  'TaskStatusBody',
+  'TemplateId',
   'TraceResponse',
   'TraceTimelineResponse',
+  'taskStatus',
 ];
 
 function stripComments(src: string): string {
@@ -167,9 +177,20 @@ describe('facade exports (rule 16)', () => {
       BuildNotesResponse: auditView,
       EvalHistoryResponse: auditView,
       TraceTimelineResponse: auditView,
+      ChecklistView: onboardingApi,
+      CreateOnboardingBody: onboardingApi,
+      CreateOnboardingResponse: onboardingApi,
+      ListOnboardingResponse: onboardingApi,
+      TaskStatusBody: onboardingApi,
+      TemplateId: domain,
+      taskStatus: onboardingDomain,
     };
     const facade: Record<string, unknown> = { ...api };
-    for (const name of EXPECTED_KEYS) expect(facade[name]).toBe(sources[name]?.[name]);
+    for (const name of EXPECTED_KEYS) {
+      expect(sources[name], `${name} has a server source`).toBeDefined();
+      expect(facade[name]).toBe(sources[name]?.[name]);
+      expect(facade[name], `${name} is exported`).toBeDefined();
+    }
   });
 
   it('AT-25: api.ts holds only export-from statements and comments', () => {
@@ -271,6 +292,11 @@ describe('browser-safe import graph (rule 17)', () => {
       'server/src/domain/handbook.ts',
       'server/src/handbook/schemas.ts',
       'server/src/audit-view/schemas.ts', // specs/audit-view.md A-8
+      // Amended by specs/onboarding-ui.md (S-6, rule 16): the walker also visits these.
+      'server/src/onboarding/schemas.ts',
+      'server/src/domain/onboarding.ts',
+      'server/src/agents/onboarding/schemas.ts',
+      'server/src/agents/orchestrator/schemas.ts',
     ]) {
       expect(seen).toContain(must);
     }
@@ -346,5 +372,40 @@ describe('audit-view facade (specs/audit-view.md rule 26)', () => {
     const seen = [...visited].map((f) => relative(ROOT, f).split('\\').join('/'));
     expect(seen).toContain('server/src/audit-view/schemas.ts');
     expect(seen).not.toContain('server/src/evals/schemas.ts');
+  });
+});
+
+// specs/onboarding-ui.md AT-16 (rule 16): the seven onboarding facade names.
+describe('onboarding-ui facade (specs/onboarding-ui.md rule 16)', () => {
+  it('AT-16: the list is exact and each new name is the identical server object', () => {
+    expect(Object.keys(api).sort()).toEqual(EXPECTED_KEYS);
+    expect(api.ChecklistView).toBe(onboardingApi.ChecklistView);
+    expect(api.CreateOnboardingBody).toBe(onboardingApi.CreateOnboardingBody);
+    expect(api.CreateOnboardingResponse).toBe(onboardingApi.CreateOnboardingResponse);
+    expect(api.ListOnboardingResponse).toBe(onboardingApi.ListOnboardingResponse);
+    expect(api.TaskStatusBody).toBe(onboardingApi.TaskStatusBody);
+    expect(api.TemplateId).toBe(domain.TemplateId);
+    expect(api.taskStatus).toBe(onboardingDomain.taskStatus);
+  });
+
+  it('AT-16: ChecklistSummary, OwnerProgress and ListOnboardingQuery are not exported', () => {
+    const facade: Record<string, unknown> = { ...api };
+    for (const name of ['ChecklistSummary', 'OwnerProgress', 'ListOnboardingQuery', 'TaskStatus']) {
+      expect(name in facade, name).toBe(false);
+    }
+  });
+
+  it('AT-16: the walker visits the four rule 16 modules and reports no violation', () => {
+    const { visited, violations } = walkImports(API_TS);
+    expect(violations).toEqual([]);
+    const seen = [...visited].map((f) => relative(ROOT, f).split('\\').join('/'));
+    for (const f of [
+      'server/src/onboarding/schemas.ts',
+      'server/src/domain/onboarding.ts',
+      'server/src/agents/onboarding/schemas.ts',
+      'server/src/agents/orchestrator/schemas.ts',
+    ]) {
+      expect(seen).toContain(f);
+    }
   });
 });

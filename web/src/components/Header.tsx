@@ -8,6 +8,7 @@ import { PersonaSwitcher } from './PersonaSwitcher.js';
 const TABS: Readonly<Record<RouteKey, { to: string; label: string }>> = {
   chat: { to: '/chat', label: 'Chat' },
   queue: { to: '/queue', label: 'Queue' },
+  onboarding: { to: '/onboarding', label: 'Onboarding' },
   audit: { to: '/audit', label: 'Audit' },
 };
 

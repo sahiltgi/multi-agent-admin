@@ -452,6 +452,15 @@ Owner decisions made on 2026-10-26. They are settled.
   - A-6: rule 15. Rows become timeline steps (audit-view rule 20); no `payload` value outside the allowlist reaches the DOM or the response.
   - A-7: AT-3, AT-4, AT-9, AT-11, AT-14, AT-17, AT-21, AT-24 and EV-2 to EV-4 stub `GET /audit/:id/timeline` with a `TraceTimelineResponse` fixture, and their URL assertions gain `/timeline`.
   - A-8: rule 16, AT-25 and AT-27. The facade adds `BuildNotesResponse`, `EvalHistoryResponse` and `TraceTimelineResponse`; the walker also visits `server/src/audit-view/schemas.ts`.
+- **Amended by specs/onboarding-ui.md (2026-10-28):** a sanctioned rescope, owner-approved under onboarding-ui OQ-2. Each item's full wording is in onboarding-ui rule 20.
+  - S-1: Goal and rule 6. The routes are `/chat`, `/queue`, `/onboarding` and `/audit`.
+  - S-2: rule 2, the HTTP calls table and AT-3. The table gains the four onboarding calls, and `PATCH` sends the same header names as `POST`. AT-3 also loads `/onboarding` per persona; only `GET /onboarding?limit=50[&cursor=…]` has a query string.
+  - S-3: rule 4 and AT-6 to AT-9. A switch on `/onboarding` behaves as onboarding-ui rule 3; those ATs are unchanged.
+  - S-4: rule 5 and AT-10. The nav link names are `[Chat]` for Asha, `[Chat, Queue, Onboarding]` for Ravi and `[Chat, Queue, Onboarding, Audit]` for Meera.
+  - S-5: rule 12 and AT-21. The states gain onboarding-ui's fixed texts.
+  - S-6: rule 16, AT-25, AT-26 and AT-27. The exact facade export list gains `ChecklistView`, `CreateOnboardingBody`, `CreateOnboardingResponse`, `ListOnboardingResponse`, `TaskStatusBody`, `TemplateId` and `taskStatus`; each `toBe`s its server export, and the walker also visits the onboarding-ui rule 16 modules.
+  - S-7: D-1. The role label also decides, as UX only, whether `/onboarding` shows a `Mark done` button (onboarding-ui rule 11). The server still decides every permission.
+  - S-8: D-5. onboarding-ui requests the same new-feature step-8 waiver (onboarding-ui OQ-6, granted).
 
 How this spec applies the decisions, not owner text: rule 16 adds `ErrorBody`, `ErrorCode` and `MAX_USER_TEXT_CHARS` to the facade (from default rules 8 and 11) and leaves out `MyRequestsResponse` (no route needs it). Rule 15 maps D-4's "kind" to `eventType`. Rule 18 lists `zod` as a web and shared dependency.
 

@@ -662,3 +662,6 @@ Category: `routing | extraction | verdict | citation | injection`. This is mostl
   - success refetches the list instead of patching a card.
 
   Accept, or change any? Blocks: none.
+
+- **Amended by specs/onboarding-ui.md (2026-10-28):** a sanctioned rescope, owner-approved under onboarding-ui OQ-2. Each item's full wording is in onboarding-ui rule 20.
+  - S-6: AT-20. The exact facade export list gains `ChecklistView`, `CreateOnboardingBody`, `CreateOnboardingResponse`, `ListOnboardingResponse`, `TaskStatusBody`, `TemplateId` and `taskStatus`; each `toBe`s its server export, and the walker also visits the onboarding-ui rule 16 modules.

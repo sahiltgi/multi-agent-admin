@@ -29,6 +29,14 @@ const FACADE_NAMES = [
   'OnboardingVerdict',
   'Role',
   'QaVerdict',
+  // Amended by specs/onboarding-ui.md (S-6).
+  'ChecklistView',
+  'CreateOnboardingBody',
+  'CreateOnboardingResponse',
+  'ListOnboardingResponse',
+  'TaskStatusBody',
+  'TemplateId',
+  'taskStatus',
 ];
 
 function walk(dir: string, pattern: RegExp): string[] {
