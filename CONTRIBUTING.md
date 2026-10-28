@@ -58,10 +58,17 @@ Run from the repo root. These are the only scripts defined in the `package.json`
 
 - Path-scoped rules in `.claude/rules/` (`gate.md`, `agents.md`, `web.md`) load when Claude reads or edits matching files.
 - Dev subagents are in `.claude/agents/` (see [docs/dev-agents.md](docs/dev-agents.md)).
-- Workflow skills are in `.claude/skills/`: `/new-feature`, `/run-evals`, `/change-policy`, `/fix-issue`, and `/open-pr` (manual-only).
+- Workflow skills are in `.claude/skills/`: `/new-feature`, `/change-policy`, `/fix-issue`, `/review-pr`, and the manual-only `/run-evals` (spends API credit) and `/open-pr`.
 - Personal, uncommitted notes go in `CLAUDE.local.md` (gitignored).
 
 Keep situational guidance out of AGENTS.md and CLAUDE.md. Put it in a path-scoped rule, a skill or a doc.
+
+Session habits:
+
+- **Measure context.** Run `/context` after any change to CLAUDE.md, AGENTS.md, rules, skills, agents or MCP, and note the startup total in the PR.
+- **One task per session.** `/clear` before starting an unrelated task. `/compact` when a long session slows down or starts repeating itself, and say what to keep (for example `/compact keep the spec path and failing test`).
+- **Model per task.** The main session uses the default model. Subagent models are set per agent and justified in [docs/dev-agents.md](docs/dev-agents.md). Switch the main session with `/model` only for a reason you can state, such as a large refactor.
+- **Cost.** Run `/cost` at the end of each session and record it in [AI_LOG.md](AI_LOG.md) (see [docs/ai-policy.md](docs/ai-policy.md#usage-and-cost-tracking)).
 
 ## Workflow
 

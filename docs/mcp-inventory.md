@@ -11,7 +11,7 @@ Every MCP server we've considered for this repo, and our decision on each. [ai-p
   - credentials come from env vars only, never written into `.mcp.json`
   - scopes are read-only wherever possible
 - **Two settings stay as they are:** `.mcp.json` is under CODEOWNERS, and `enableAllProjectMcpServers` stays `false`.
-- **Owner:** @sahilfiftyfivetech. **Backup:** TBD (same as ai-policy). **Next review:** 2026-11-01.
+- **Owner:** @sahiltgi. **Backup:** TBD (same as ai-policy). **Next review:** 2026-11-01.
 - **Current state:** no servers adopted, and `.mcp.json` doesn't exist.
 
 ## How approval works in Claude Code
@@ -40,12 +40,12 @@ Every MCP server we've considered for this repo, and our decision on each. [ai-p
 
 (\*) The version to use if it's ever adopted. It was the latest stable release when checked on 2026-10-12. It's not installed.
 
-Owner for every row: @sahilfiftyfivetech.
+Owner for every row: @sahiltgi.
 
 ## MongoDB MCP (local, stdio)
 
 - **Purpose:** let an agent list collections, infer schemas and run read queries against the local dev MongoDB (`docker-compose.yml`).
-- **Owner:** @sahilfiftyfivetech.
+- **Owner:** @sahiltgi.
 - **Source:** official, MongoDB's own package. npm: `mongodb-mcp-server`. Repo: `github.com/mongodb-js/mongodb-mcp-server`.
 - **Pinned version:** `3.0.5`, released 2026-10-01. `3.1.0-pre.1` is a pre-release, so don't use it.
   - `npx -y mongodb-mcp-server@3.0.5` pins the package and its own `@mongodb-js/mcp-*` packages, which are pinned exactly at `3.0.5`. Third-party and transitive dependencies (for example `@modelcontextprotocol/node@^2`) still float.
@@ -108,7 +108,7 @@ Source for flags, tool names and defaults: the `mongodb-mcp-server` v3.0.5 READM
 ## MongoDB MCP (Atlas-hosted)
 
 - **Purpose:** the same as above, through MongoDB's hosted MCP endpoint.
-- **Owner:** @sahilfiftyfivetech.
+- **Owner:** @sahiltgi.
 - **Source:** official (MongoDB Atlas).
 - **Pinned version:** n/a. It's a hosted service, so we can't pin it.
 - **Credentials:** OAuth through the client, or Atlas service-account credentials (`MDB_MCP_API_CLIENT_ID` and `MDB_MCP_API_CLIENT_SECRET`) through the `mongodb-atlas-mcp-remote` stdio bridge.
@@ -120,7 +120,7 @@ Source for flags, tool names and defaults: the `mongodb-mcp-server` v3.0.5 READM
 ## GitHub MCP
 
 - **Purpose:** read and manage issues, PRs and Actions.
-- **Owner:** @sahilfiftyfivetech.
+- **Owner:** @sahiltgi.
 - **Source:** official (`github/github-mcp-server`).
 - **Pinned version:** n/a (rejected).
 - **Credentials:** a GitHub personal access token.
@@ -132,7 +132,7 @@ Source for flags, tool names and defaults: the `mongodb-mcp-server` v3.0.5 READM
 ## Docker MCP
 
 - **Purpose:** manage containers, images and volumes.
-- **Owner:** @sahilfiftyfivetech.
+- **Owner:** @sahiltgi.
 - **Source:** official (Docker MCP Toolkit / gateway).
 - **Pinned version:** n/a (rejected).
 - **Credentials:** access to the local Docker socket.
@@ -144,7 +144,7 @@ Source for flags, tool names and defaults: the `mongodb-mcp-server` v3.0.5 READM
 ## Filesystem / Git MCP
 
 - **Purpose:** read and write files and run git operations.
-- **Owner:** @sahilfiftyfivetech.
+- **Owner:** @sahiltgi.
 - **Source:** reference servers (`modelcontextprotocol/servers`).
 - **Pinned version:** n/a (rejected).
 - **Credentials:** none. The server runs as the local user.
@@ -156,7 +156,7 @@ Source for flags, tool names and defaults: the `mongodb-mcp-server` v3.0.5 READM
 ## Browser automation (Playwright MCP)
 
 - **Purpose:** open the `web/` dev server in a browser to check UI changes.
-- **Owner:** @sahilfiftyfivetech.
+- **Owner:** @sahiltgi.
 - **Source:** official (`microsoft/playwright-mcp`).
 - **Pinned version:** n/a (deferred).
 - **Credentials:** none for local pages.
@@ -165,13 +165,18 @@ Source for flags, tool names and defaults: the `mongodb-mcp-server` v3.0.5 READM
   - **Why:** there are no UI specs yet. Page content is untrusted input (HARD RULE 3).
   - **Revisit when:** a UI spec needs end-to-end checks. Compare it with plain Playwright tests run from `npm test` first.
 
-## User-scoped connectors
+## User-scoped plugins and connectors
 
-Claude Code sessions can also expose MCP connectors set up at the user level, outside this repo. Examples: claude.ai connectors such as Google Drive, Google Docs, Gmail and Calendar.
+Claude Code sessions can also load plugins and MCP connectors set up at the user level, outside this repo. They aren't in `.mcp.json`, but they reach repo sessions, so they're recorded here. Reviewed on 2026-10-28.
 
-- They aren't in `.mcp.json`, so this inventory doesn't govern them.
-- Don't use them for repo work or HR data.
+| Item                                  | Kind                  | Where it's set                                | Review                                                                                                                                                                | Decision                       |
+| ------------------------------------- | --------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `code-review@claude-plugins-official` | Plugin                | `enabledPlugins` in `~/.claude/settings.json` | Official marketplace. Cached build `f359d43b4060` holds one command (`commands/code-review.md`), `plugin.json`, README and LICENSE. No hooks, scripts or MCP servers. | Keep. Re-check on each update. |
+| claude.ai Google Drive, Google Docs   | Connector (claude.ai) | The owner's claude.ai account                 | Read and write access to the owner's Drive.                                                                                                                           | Not for repo work or HR data.  |
+| claude.ai Gmail, Google Calendar      | Connector (claude.ai) | The owner's claude.ai account                 | Need sign-in before use; mail and calendar are personal data.                                                                                                         | Not for repo work or HR data.  |
+
 - The synthetic-data rule in [AGENTS.md](../AGENTS.md#conventions) still applies.
+- Connector use is guidance only. Accepted for MVP because enforcing it needs `"disableClaudeAiConnectors": true` in `.claude/settings.json`, which only a human edits; the owner decides whether to add it.
 
 ## Adding or changing a server
 

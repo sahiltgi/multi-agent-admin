@@ -3,6 +3,7 @@ name: run-evals
 description: Runs the eval suite (npm run evals, or npm run evals -- <agent>), compares each agent with its latest earlier results file in evals/results/, prints a per-agent delta table and flags regressions. Use when asked to run evals, check eval pass rates, or see whether a prompt or agent change made quality worse.
 argument-hint: '[agent]'
 arguments: [agent]
+disable-model-invocation: true
 allowed-tools: Bash(npm run evals), Bash(npm run evals -- *)
 ---
 

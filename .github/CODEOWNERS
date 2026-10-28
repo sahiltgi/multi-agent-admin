@@ -1,12 +1,12 @@
 # Changes to agent instructions, guardrails, policies, prompts and CI need the owner's review.
 # Pair with branch protection "Require review from Code Owners" (see CONTRIBUTING.md).
 
-/AGENTS.md    @sahilfiftyfivetech
-/CLAUDE.md    @sahilfiftyfivetech
-/.claude/     @sahilfiftyfivetech
-/.mcp.json    @sahilfiftyfivetech
-/.husky/      @sahilfiftyfivetech
-/policies/    @sahilfiftyfivetech
-/prompts/     @sahilfiftyfivetech
-/.github/     @sahilfiftyfivetech
-/evals/       @sahilfiftyfivetech
+/AGENTS.md    @sahiltgi
+/CLAUDE.md    @sahiltgi
+/.claude/     @sahiltgi
+/.mcp.json    @sahiltgi
+/.husky/      @sahiltgi
+/policies/    @sahiltgi
+/prompts/     @sahiltgi
+/.github/     @sahiltgi
+/evals/       @sahiltgi

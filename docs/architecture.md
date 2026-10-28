@@ -82,9 +82,9 @@ docker-compose.yml   local MongoDB
 .env.example         env template; copy to .env, never commit real values
 ```
 
-## Module layout (planned)
+## Module layout
 
-Planned in brief §9. Most parts don't exist yet; the notes say which do. Create each part only when its first spec needs it.
+From brief §9. Every module below exists. Add a new module only when its first spec needs it.
 
 - `server/src/gate/`: Policy Gate, pure functions over `policies/` with no I/O, clock or LLM.
 - `server/src/agents/`: orchestrator and sub-agents with code-enforced tool allowlists.

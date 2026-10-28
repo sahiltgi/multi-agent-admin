@@ -6,3 +6,5 @@ package-lock.json
 docs/brief.md
 playwright-report
 test-results
+# Local Claude Code worktrees are full copies of the repo.
+.claude/worktrees

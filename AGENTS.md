@@ -6,12 +6,12 @@ Single source of truth for every AI coding tool in this repo. `CLAUDE.md` import
 
 Gated multi-agent HR & Admin operations system: leave requests, policy Q&A and onboarding.
 Agents do the work, a deterministic TypeScript Policy Gate produces every verdict, and humans decide people matters.
-npm-workspace monorepo: `server/` (Node + TypeScript, Express 5 API with Zod validation middleware) and `web/` (React + Vite), with MongoDB via `docker-compose.yml`.
+npm-workspace monorepo: `server/` (Node + TypeScript, Express 5 API with Zod validation middleware) `web/` (React + Vite) and `shared/` (`@hr/shared`, the HTTP contract re-exported for the browser), with MongoDB via `docker-compose.yml`.
 
 ## Docs
 
 - [docs/brief.md](docs/brief.md): what we are building and why. This is the source of truth.
-- [docs/architecture.md](docs/architecture.md): components, request flow, repo layout and planned modules.
+- [docs/architecture.md](docs/architecture.md): components, request flow, repo layout and module layout.
 - [CONTRIBUTING.md](CONTRIBUTING.md): every npm script, setup, branches, commits and PRs.
 - Path-specific rules live in `.claude/rules/` (gate, agents, web). Read the matching file before editing those paths.
 

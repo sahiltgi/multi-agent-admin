@@ -2,7 +2,7 @@
 
 - **Status:** reviewed <!-- draft | reviewed. A human sets "reviewed" before test-writer runs. -->
 - **Brief:** §10 (demo story, steps 1–6), §12 ("All six demo steps pass as Playwright tests against seeded data"), §7 (Vitest; Playwright for UI e2e), §2 and §6 (the LLM never approves; synthetic data only)
-- **Owner:** @sahilfiftyfivetech
+- **Owner:** @sahiltgi
 
 This spec follows the approved implementation plan. Where the plan and the code differed, the owner settled the difference (D-5 to D-7).
 
