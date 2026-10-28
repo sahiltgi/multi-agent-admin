@@ -12,7 +12,7 @@ How AI coding tools are allowed to work in this repo. [AGENTS.md](../AGENTS.md) 
   - `.mcp.json` is under CODEOWNERS.
 - **Dangerous modes off:** `bypassPermissions` is disabled. Never run with `--dangerously-skip-permissions`, never disable the sandbox, and never skip git hooks.
 - **Human review:** every PR needs a human review before merge, whether AI wrote it or not. That means CODEOWNERS, branch protection, and the PR template's "AI assistance" section.
-- **Owner:** @sahilfiftyfivetech. **Backup:** TBD (assign before 2026-10-15).
+- **Owner:** @sahiltgi. **Backup:** TBD (assign before 2026-10-15).
 - **Next review:** 2026-11-01.
 
 ## Claude Code permissions (`.claude/settings.json`)

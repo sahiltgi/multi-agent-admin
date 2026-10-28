@@ -21,3 +21,6 @@ CLAUDE.local.md
 e2e/screenshots/
 playwright-report/
 test-results/
+
+# Claude Code worktrees (local copies of the repo for isolated agents)
+.claude/worktrees/

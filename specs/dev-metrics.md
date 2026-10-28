@@ -2,7 +2,7 @@
 
 - **Status:** reviewed <!-- draft | reviewed. A human sets "reviewed" before test-writer runs. --> (set on the owner's explicit "approved" on 2026-10-25)
 - **Brief:** §9 (AI development setup)
-- **Owner:** @sahilfiftyfivetech
+- **Owner:** @sahiltgi
 
 ## Goal
 

@@ -2,7 +2,7 @@
 
 - **Status:** reviewed <!-- draft | reviewed. A human sets "reviewed" before test-writer runs. --> (set again on the owner's explicit "approved" of the second amendment on 2026-10-23)
 - **Brief:** §9
-- **Owner:** @sahilfiftyfivetech
+- **Owner:** @sahiltgi
 
 ## Amendment (2026-10-23): GitHub Free, private repo
 
