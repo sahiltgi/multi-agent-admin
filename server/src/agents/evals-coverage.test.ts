@@ -45,8 +45,11 @@ function lines(file: string, parse: (v: unknown) => Line): Line[] {
 const added = FILES.map((f) => ({ ...f, cases: lines(f.file, f.parse).slice(f.preGrowth) }));
 
 describe('eval growth: 40 cases per agent', () => {
-  it('every agent file holds exactly 40 cases', () => {
-    for (const f of FILES) expect(lines(f.file, f.parse), f.agent).toHaveLength(40);
+  // At least 40: red-team cases (docs/red-team.md) are appended past the growth target.
+  it('every agent file holds at least 40 cases', () => {
+    for (const f of FILES) {
+      expect(lines(f.file, f.parse).length, f.agent).toBeGreaterThanOrEqual(40);
+    }
   });
 
   it('every added case carries a reviewed flag', () => {

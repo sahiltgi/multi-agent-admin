@@ -124,6 +124,7 @@ fixed message pointing to HR.
 | Database | MongoDB + Mongoose | ADR-0002 |
 | Handbook Q&A | Handbook passed in context with prompt caching and API citations | Vector search deferred; ADR-0003 |
 | LLM | Claude API with tool use | Small model for routing, mid-tier for agents |
+| LLM fallback (dev) | Gemini `gemini-3.5-flash-lite`, used only when `ANTHROPIC_API_KEY` is empty | One model for every agent; no API citations, so policy Q&A escalates; [spec](../specs/gemini-fallback.md) |
 | Schemas | Zod everywhere | API, tools, agent outputs, YAML policies |
 | Tests and evals | Vitest; Playwright for UI e2e | |
 | UI | React + Vite | Three views (below) |

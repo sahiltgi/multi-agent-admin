@@ -396,8 +396,19 @@ export const ServerEnv = z.object({
 });
 export type ServerEnv = z.infer<typeof ServerEnv>;
 
-// The running server's env (spec mongo-persistence, rule 9; D-5, D-6, D-18). ServerEnv above
-// stays the policy step's schema. Values are never printed: errors name the variable only.
+// Model API keys (spec gemini-fallback, rules 1, 3; D-1). '' (as copied from .env.example) counts as
+// missing; values are used verbatim, never trimmed.
+export const OptionalKey = z.preprocess(
+  (v) => (v === '' ? undefined : v),
+  z.string().min(1).optional(),
+);
+/** Names only, never values. */
+export const NO_MODEL_KEY_MESSAGE =
+  'Set ANTHROPIC_API_KEY or GEMINI_API_KEY in .env (see .env.example).';
+
+// The running server's env (spec mongo-persistence, rule 9; D-5, D-18; gemini-fallback, rule 3).
+// ServerEnv above stays the policy step's schema. Values are never printed: errors name the
+// variable only.
 export const ServerRuntimeEnv = ServerEnv.extend({
   NODE_ENV: z.string().trim().toLowerCase().optional(), // 'production', in any case, is refused (rule 11)
   MONGODB_URI: SeedEnv.shape.MONGODB_URI,
@@ -407,7 +418,13 @@ export const ServerRuntimeEnv = ServerEnv.extend({
     .default('3000') // D-5
     .transform(Number)
     .pipe(z.number().int().min(1).max(65535)),
-  ANTHROPIC_API_KEY: z.string().min(1), // required (D-6)
+  // At least one is required (gemini-fallback, rule 3, amending D-6); Anthropic wins when both are set.
+  ANTHROPIC_API_KEY: OptionalKey,
+  GEMINI_API_KEY: OptionalKey,
+}).superRefine((env, ctx) => {
+  if (env.ANTHROPIC_API_KEY === undefined && env.GEMINI_API_KEY === undefined) {
+    ctx.addIssue({ code: 'custom', path: ['ANTHROPIC_API_KEY'], message: NO_MODEL_KEY_MESSAGE });
+  }
 });
 export type ServerRuntimeEnv = z.infer<typeof ServerRuntimeEnv>;
 

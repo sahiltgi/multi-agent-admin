@@ -6,6 +6,7 @@ import { toAuditEvent, type AuditSink } from './audit.js';
 import type { PromptLoader } from './prompts.js';
 import type { ToolContext, ToolRegistry } from './registry.js';
 import {
+  actualModel,
   AgentConfig,
   ModelRequest,
   ModelResponse,
@@ -195,6 +196,8 @@ async function runOnce(
   input: RunInput,
 ): Promise<RunResult> {
   const { clock } = deps;
+  // The model actually called is the one sent and recorded (spec gemini-fallback, rule 8; D-5).
+  const calledModel = actualModel(deps.model, cfg.model);
   const start = clock.nowMs();
   const deadline = start + cfg.timeoutMs;
   const controller = new AbortController();
@@ -239,7 +242,7 @@ async function runOnce(
         isError: e.isError ?? false,
         tokens: e.tokens ?? null,
         latencyMs: e.latencyMs ?? 0,
-        model: cfg.model,
+        model: calledModel,
         promptVersion: cfg.promptVersion,
         stopReason: e.stopReason ?? null,
         outcome: e.outcome ?? null,
@@ -254,7 +257,7 @@ async function runOnce(
     const base = {
       requestId: input.requestId,
       agentId: cfg.agentId,
-      model: cfg.model,
+      model: calledModel,
       promptVersion: cfg.promptVersion,
       turns: turn,
       usage: { ...usage },
@@ -338,7 +341,7 @@ async function runOnce(
       if (expired()) return await finish({ outcome: 'timeout' });
       turn += 1;
       const request = ModelRequest.parse({
-        model: cfg.model,
+        model: calledModel,
         system,
         messages,
         tools,

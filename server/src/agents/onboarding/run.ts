@@ -278,7 +278,7 @@ export async function runOnboardingAgent(
         escalation: result.kind === 'escalated' ? result.reason : null,
         deviationCount: result.kind === 'checklist' ? result.deviations.length : 0,
         injectionSuspected: flagged,
-        model: ONBOARDING_CONFIG.model,
+        model: run.model, // the model actually called (spec gemini-fallback, rule 8)
         promptVersion: ONBOARDING_CONFIG.promptVersion,
       }),
     );

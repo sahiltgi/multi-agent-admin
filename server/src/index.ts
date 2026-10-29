@@ -1,7 +1,7 @@
 // Server entry point (spec mongo-persistence, rule 10; D-11). Loading the leave policy is still the
 // first startup step (spec leave-policy, rule 15). `--check-policy` stops after it.
 // `.env` is loaded by Node's --env-file-if-exists flag in `npm start`; values are never printed.
-import { createAnthropicClient } from './agents/anthropic-client.js';
+import { createModelClient } from './agents/model-provider.js';
 import { connectMongo } from './persistence/mongo/connect.js';
 import { loadLeavePolicy } from './policies/load.js';
 import { buildApp } from './server/app.js';
@@ -25,7 +25,7 @@ process.exitCode = await runServerProcess(
     },
     loadPolicy: loadLeavePolicy,
     loadBootFiles,
-    createModel: createAnthropicClient,
+    createModel: createModelClient, // spec gemini-fallback, rule 2
     connect: connectMongo,
     buildApp,
     listen: listenHttp,
