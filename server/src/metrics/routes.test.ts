@@ -138,7 +138,11 @@ describe('agent-metrics AT-15: RBAC', () => {
   });
 
   it('RED-14: role claims in headers and the query never lift an employee to hr_admin', async () => {
-    const spoof = { 'x-role': 'hr_admin', 'x-demo-role': 'hr_admin', 'x-forwarded-user': 'emp-001' };
+    const spoof = {
+      'x-role': 'hr_admin',
+      'x-demo-role': 'hr_admin',
+      'x-forwarded-user': 'emp-001',
+    };
     const w = makeWorld();
     const res = await get(w, 'emp-004', '', spoof);
     expect(res.status).toBe(403);

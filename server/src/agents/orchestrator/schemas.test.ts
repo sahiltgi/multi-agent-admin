@@ -146,17 +146,17 @@ describe('orchestrator schemas', () => {
     ).toBe(false);
   });
 
-  it('AT-26 (amended by the eval growth): cases.jsonl holds orch-001 to orch-040 and covers every label', () => {
+  it('AT-26 (amended by the eval growth and the red team): cases.jsonl holds orch-001 to orch-051 and covers every label', () => {
     const path = fileURLToPath(
       new URL('../../../../evals/orchestrator/cases.jsonl', import.meta.url),
     );
     const lines = readFileSync(path, 'utf8')
       .split('\n')
       .filter((l) => l.trim() !== '');
-    expect(lines).toHaveLength(40);
+    expect(lines).toHaveLength(51);
     const cases = lines.map((l) => OrchestratorEvalCase.parse(JSON.parse(l)));
     expect(cases.map((c) => c.id)).toEqual(
-      Array.from({ length: 40 }, (_, i) => `orch-${String(i + 1).padStart(3, '0')}`),
+      Array.from({ length: 51 }, (_, i) => `orch-${String(i + 1).padStart(3, '0')}`),
     );
     expect(new Set(cases.map((c) => c.expected.label))).toEqual(new Set(LABELS));
     expect(cases.some((c) => c.category === 'injection')).toBe(true);

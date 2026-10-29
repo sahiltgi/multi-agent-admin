@@ -57,10 +57,10 @@ function seedContext(employeeId: string): LeaveGateContext {
 }
 
 describe('leave static files', () => {
-  it('D-4: evals/leave/cases.jsonl parses as LeaveEvalCase with ids exactly EV-1 to EV-40 (chat-endpoint amendment: EV-22 to EV-31; eval growth: EV-32 to EV-40)', () => {
+  it('D-4: evals/leave/cases.jsonl parses as LeaveEvalCase with ids exactly EV-1 to EV-48 (chat-endpoint amendment: EV-22 to EV-31; eval growth: EV-32 to EV-40; red team: EV-41 to EV-48)', () => {
     expect(existsSync(CASES)).toBe(true);
     const ids = cases().map((c) => c.id);
-    const expected = Array.from({ length: 40 }, (_, i) => `EV-${String(i + 1)}`);
+    const expected = Array.from({ length: 48 }, (_, i) => `EV-${String(i + 1)}`);
     expect(new Set(ids).size).toBe(ids.length); // no duplicates
     expect([...ids].sort()).toEqual([...expected].sort());
   });

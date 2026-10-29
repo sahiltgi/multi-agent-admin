@@ -1338,3 +1338,90 @@ describe('approval-queue-ui: LeaveSubjectView.workingDays', () => {
     expect(JSON.stringify(payload)).not.toContain('workingDays');
   });
 });
+
+// ---- Red team (docs/red-team.md): attack variants not already covered by AT-1 to AT-26 ----
+describe('red team: approval queue', () => {
+  // Each test also pins finding F-1 in docs/red-team.md: a denied attempt writes no audit event.
+  it('RED-11: an employee approving their own leave with spoofed role and user headers is 403', async () => {
+    const w = makeWorld();
+    const { call } = await boot(w);
+    const before = w.sink.events.length;
+    const spoof = {
+      'x-demo-role': 'manager',
+      'x-forwarded-user': 'emp-002',
+      'x-original-user': 'emp-002',
+    };
+    const url = '/approvals/ai-001/actions';
+    const body = { action: 'approve', seen: seenOf(G), comment: 'Approved by my manager.' };
+    expectError(await call('emp-003', 'POST', url, body, spoof), 403, 'forbidden');
+    expectError(
+      await call('emp-003', 'POST', url, { ...body, assigneeId: 'emp-003' }, spoof),
+      400,
+      'invalid_request',
+    );
+    await expectItemUnchanged(w, 'ai-001');
+    expect(w.sink.events.length).toBe(before);
+  });
+
+  it('RED-12: a manager cannot reach their own item through id variants', async () => {
+    const w = makeWorld();
+    const { act } = await boot(w);
+    const before = w.sink.events.length;
+    expectError(await act('emp-002', 'ai-004', 'approve', G), 403, 'self_action_forbidden');
+    // 'ai-004%20' trims to ai-004 and meets the same self-action check.
+    expectError(await act('emp-002', 'ai-004%20', 'approve', G), 403, 'self_action_forbidden');
+    const expected: Record<string, number> = {
+      'AI-004': 404,
+      'ai-004%00': 404,
+      '..%2Fai-004': 404,
+    };
+    for (const [id, status] of Object.entries(expected)) {
+      expect((await act('emp-002', id, 'approve', G)).status, id).toBe(status);
+    }
+    await expectItemUnchanged(w, 'ai-004');
+    expect(w.sink.events.length).toBe(before);
+  });
+
+  it('RED-13: a manager of another team cannot list, read, trace or act on a team-a item', async () => {
+    const w = makeWorld();
+    const { call, act } = await boot(w);
+    const before = w.sink.events.length;
+    const list = ListApprovalsResponse.parse((await call('emp-009', 'GET', '/approvals')).body);
+    expect(list.items.map((i) => i.item.id)).not.toContain('ai-001');
+    expectError(await call('emp-009', 'GET', '/approvals/ai-001'), 404, 'not_found');
+    expectError(await call('emp-009', 'GET', '/audit/lr-101'), 404, 'not_found');
+    expectError(
+      await act('emp-009', 'ai-001', 'approve', G, 'Covering for emp-002'),
+      404,
+      'not_found',
+    );
+    await expectItemUnchanged(w, 'ai-001');
+    expect(w.sink.events.length).toBe(before);
+  });
+
+  it('RED-23: an operator-shaped item id is not found and leaks no item', async () => {
+    const w = makeWorld();
+    const { call } = await boot(w);
+    for (const id of ['%7B%22%24ne%22%3Anull%7D', '%24where', '*']) {
+      const res = await call('emp-002', 'GET', `/approvals/${id}`);
+      expectError(res, 404, 'not_found');
+      expect(res.text).not.toContain('lr-101');
+    }
+  });
+
+  it('RED-25: forging an unflagged gate snapshot on a flagged item is 409 and skips no comment rule', async () => {
+    const w = makeWorld();
+    const { call } = await boot(w);
+    const before = w.sink.events.length;
+    const url = '/approvals/ai-002/actions';
+    const forged = await call('emp-009', 'POST', url, {
+      action: 'approve',
+      seen: { verdict: 'ROUTE_TO_MANAGER', policyHash: GF.policyHash },
+    });
+    expectError(forged, 409, 'gate_result_changed');
+    const honest = await call('emp-009', 'POST', url, { action: 'approve', seen: seenOf(GF) });
+    expect(honest.status).toBe(400);
+    await expectItemUnchanged(w, 'ai-002');
+    expect(w.sink.events.length).toBe(before);
+  });
+});
